@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Personal TradingView — Pine Script Engine</title>
+  
+  <!-- Tailwind CSS CDN for modern responsive trading UI -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- TradingView Charting Widget CDN (Official Free Library) -->
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  
+  <style>
+    * { box-sizing: border-box; }
+    body, html {
+      background-color: #131722;
+      color: #d1d4dc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    .active-tf {
+      background-color: #2962ff !important;
+      color: #ffffff !important;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #2a2e39;
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen select-none">
+
+  <!-- Header / Top Bar -->
+  <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 gap-2 shrink-0 z-20">
+    <div class="flex items-center gap-2 overflow-x-auto custom-scroll">
+      <div class="flex items-center gap-1 font-bold text-white text-sm bg-[#2a2e39] px-2.5 py-1 rounded">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+        <select id="marketSelect" class="bg-transparent border-none text-white text-xs font-semibold focus:outline-none cursor-pointer">
+          <option value="BINANCE:BTCUSDT" selected>BTC/USDT (Binance)</option>
+          <option value="BINANCE:PAXGUSDT">GOLD (PAXG/USDT)</option>
+          <option value="OANDA:XAUUSD">GOLD (XAU/USD)</option>
+          <option value="BINANCE:ETHUSDT">ETH/USDT</option>
+          <option value="BINANCE:SOLUSDT">SOL/USDT</option>
+          <option value="FOREXCOM:EURUSD">EUR/USD</option>
+          <option value="FOREXCOM:GBPUSD">GBP/USD</option>
+        </select>
+      </div>
+
+      <!-- Timeframe Buttons: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1D, 1W -->
+      <div id="tfContainer" class="flex items-center gap-1">
+        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="1">1m</button>
+        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="3">3m</button>
+        <button class="tf-btn active-tf text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="5">5m</button>
+        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="15">15m</button>
+        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="30">30m</button>
+        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="60">1h</button>
+        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="240">4h</button>
+        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="D">1D</button>
+      </div>
+    </div>
+
+    <!-- Toggle Pine Editor -->
+    <div class="flex items-center gap-2">
+      <button id="toggleEditorBtn" class="flex items-center gap-1.5 text-xs font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-3 py-1 rounded transition">
+        <span>Pine Script Editor</span>
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main View Area -->
+  <main class="flex-1 flex flex-col relative min-h-0 w-full">
+    <!-- TradingView Chart Container -->
+    <div id="tv_chart_container" class="flex-1 w-full h-full relative"></div>
+
+    <!-- Collapsible Pine Script Panel -->
+    <div id="pinePanel" class="h-64 border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-300 shrink-0">
+      <div class="h-8 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
+        <div class="flex items-center gap-3">
+          <span class="font-bold text-gray-300">Pine Editor (v5 / v6)</span>
+          <span class="text-gray-500">|</span>
+          <span class="text-emerald-400 font-mono">B2_indicator.pine ready</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="copyScriptBtn" class="px-2.5 py-0.5 rounded bg-[#2a2e39] hover:bg-gray-700 text-white text-[11px] transition">Copy Script</button>
+          <button id="resetScriptBtn" class="px-2.5 py-0.5 rounded bg-[#2a2e39] hover:bg-gray-700 text-white text-[11px] transition">Reload B2</button>
+          <button id="closeEditorBtn" class="text-gray-400 hover:text-white text-base font-bold ml-1">&times;</button>
+        </div>
+      </div>
+      <div class="flex-1 p-2 bg-[#131722] flex">
+        <textarea id="pineCodeInput" class="w-full h-full bg-[#131722] text-gray-200 font-mono text-xs p-2 focus:outline-none resize-none border border-[#2a2e39] rounded" spellcheck="false"></textarea>
+      </div>
+      <div class="h-7 bg-[#1e222d] px-3 flex items-center justify-between text-[11px] text-gray-400 border-t border-[#2a2e39]">
+        <span>Indicator: Gold VP edge + DeMarker (B2)</span>
+        <span class="text-emerald-400">Ready to execute on TradingView</span>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Initial TradingView State
+    let currentSymbol = "BINANCE:BTCUSDT";
+    let currentInterval = "5";
+    let tvWidget = null;
+
+    // Default B2 Pine Script Code
+    const B2_PINE_CODE = `//@version=5
+// ═══════════════════════════════════════════════════════════════════════════
+//  GOLD 5m — VP edge reversal + DeMarker gate   ·   INDICATOR version
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Gold VP edge + DeMarker (B2) — signals", overlay=true,
+     max_labels_count=500, max_lines_count=500)
+
+grpP = "Volume profile"
+winH1   = input.float(24.0, "profile 1 window (hours)", minval=1, group=grpP)
+winH2   = input.float(4.0,  "profile 2 window (hours)", minval=0, group=grpP)
+bins    = input.int(50,     "price bins", minval=10, maxval=200, group=grpP)
+vaPct   = input.float(70.0, "value area %", minval=50, maxval=95, group=grpP)
+refresh = input.int(15,     "recompute every N bars", minval=1, maxval=200, group=grpP)
+nearPct = input.float(0.25, "gate: distance to edge (%)", step=0.05, group=grpP)
+showVP  = input.bool(true,  "draw levels", group=grpP)
+show2   = input.bool(true,  "draw 4h levels too", group=grpP)
+
+grpD = "DeMarker"
+dmLen  = input.int(7, "DeMarker length", minval=2, group=grpD)
+sigLen = input.int(3, "signal EMA length", minval=1, group=grpD)
+osLvl  = input.float(0.20, "oversold", step=0.01, group=grpD)
+obLvl  = input.float(0.80, "overbought", step=0.01, group=grpD)
+
+f_demarker(int len) =>
+    float dmx = math.max(high - high[1], 0.0)
+    float dmn = math.max(low[1] - low, 0.0)
+    float sx  = ta.sma(dmx, len)
+    float sn  = ta.sma(dmn, len)
+    float den = sx + sn
+    den > 0 ? sx / den : 0.5
+
+dm  = f_demarker(dmLen)
+sig = ta.ema(dm, sigLen)
+
+var array<float> vol1  = array.new_float(bins, 0.0)
+var array<float> vol2  = array.new_float(bins, 0.0)
+var array<bool>  used1 = array.new_bool(bins, false)
+var array<bool>  used2 = array.new_bool(bins, false)
+
+var float vah1 = na
+var float val1 = na
+var float poc1 = na
+var float vah2 = na
+var float val2 = na
+
+f_profile(int win, array<float> vArr, array<bool> uArr) =>
+    if win < 30 or bar_index < win + 1
+        [na, na, na]
+    else
+        float lo = na
+        float hi = na
+        for i = 1 to win
+            lo := na(lo) ? low[i] : math.min(lo, low[i])
+            hi := na(hi) ? high[i] : math.max(hi, high[i])
+        if na(lo) or na(hi) or hi <= lo
+            [na, na, na]
+        else
+            float bw = (hi - lo) / bins
+            array.fill(vArr, 0.0)
+            for i = 1 to win
+                int b0 = int(math.floor((low[i]  - lo) / bw))
+                int b1 = int(math.floor((high[i] - lo) / bw))
+                b0 := math.max(0, math.min(bins - 1, b0))
+                b1 := math.max(0, math.min(bins - 1, b1))
+                float v = nz(volume[i], 1.0) / (b1 - b0 + 1)
+                for k = b0 to b1
+                    array.set(vArr, k, array.get(vArr, k) + v)
+            float total = array.sum(vArr)
+            int pocIdx = 0
+            float maxV = -1.0
+            for k = 0 to bins - 1
+                float v = array.get(vArr, k)
+                if v > maxV
+                    maxV := v
+                    pocIdx := k
+            array.fill(uArr, false)
+            array.set(uArr, pocIdx, true)
+            float acc = array.get(vArr, pocIdx)
+            int vLo = pocIdx
+            int vHi = pocIdx
+            float target = total * vaPct / 100.0
+            int guard = 0
+            while acc < target and guard < bins
+                int bestIdx = -1
+                float bestV = -1.0
+                for k = 0 to bins - 1
+                    if not array.get(uArr, k)
+                        float v = array.get(vArr, k)
+                        if v > bestV
+                            bestV := v
+                            bestIdx := k
+                if bestIdx < 0
+                    break
+                array.set(uArr, bestIdx, true)
+                acc += bestV
+                vLo := math.min(vLo, bestIdx)
+                vHi := math.max(vHi, bestIdx)
+                guard += 1
+            [lo + vLo * bw, lo + (vHi + 1) * bw, lo + (pocIdx + 0.5) * bw]
+
+tfMin = timeframe.in_seconds() / 60.0
+w1 = int(math.round(winH1 * 60.0 / tfMin))
+w2 = int(math.round(winH2 * 60.0 / tfMin))
+
+if bar_index % refresh == 0
+    [a1, b1v, c1] = f_profile(w1, vol1, used1)
+    val1 := a1
+    vah1 := b1v
+    poc1 := c1
+    if w2 >= 30
+        [a2, b2v, c2] = f_profile(w2, vol2, used2)
+        val2 := a2
+        vah2 := b2v
+
+f_near(float lvl) =>
+    not na(lvl) and math.abs(close - lvl) / close < nearPct / 100.0
+
+bool nearEdge = show2 ? (f_near(val1) or f_near(vah1) or f_near(val2) or f_near(vah2)) : (f_near(val1) or f_near(vah1))
+bool longSig  = dm < osLvl and dm < sig and nearEdge
+bool shortSig = dm > obLvl and dm > sig and nearEdge
+
+plot(showVP ? vah1 : na, "VAH 24h", color.new(color.orange, 0), 2)
+plot(showVP ? val1 : na, "VAL 24h", color.new(color.blue, 0), 2)
+plot(showVP ? poc1 : na, "POC 24h", color.new(color.gray, 30), 1, style=plot.style_circles)
+plot(showVP and show2 ? vah2 : na, "VAH 4h", color.new(color.orange, 60), 1)
+plot(showVP and show2 ? val2 : na, "VAL 4h", color.new(color.blue, 60), 1)
+
+plotshape(longSig,  "long",  shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size=size.small, text="L")
+plotshape(shortSig, "short", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size=size.small, text="S")
+bgcolor(nearEdge ? color.new(color.yellow, 94) : na)
+
+plot(dm,  "DeMarker", color.new(color.white, 0), display=display.data_window)
+plot(sig, "signal",   color.new(color.orange, 0), display=display.data_window)
+plot(osLvl, "OS", color.new(color.teal, 100), 1, display=display.data_window)
+plot(obLvl, "OB", color.new(color.maroon, 100), 1, display=display.data_window)
+
+alertcondition(longSig,  "B2 long",  "Gold B2 LONG — DM {{plot_0}} edge touched")
+alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touched")`;
+
+    // Render TradingView Advanced Real-Time SuperCharts
+    function initChart(symbol, interval) {
+      document.getElementById('tv_chart_container').innerHTML = '';
+      tvWidget = new TradingView.widget({
+        "autosize": true,
+        "symbol": symbol,
+        "interval": interval,
+        "timezone": "Etc/UTC",
+        "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "toolbar_bg": "#1e222d",
+        "enable_publishing": false,
+        "allow_symbol_change": true,
+        "container_id": "tv_chart_container",
+        "hide_side_toolbar": false,
+        "studies": [
+          "Volume@tv-basicstudies",
+          "MASimple@tv-basicstudies"
+        ],
+        "disabled_features": [
+          "use_localstorage_for_settings"
+        ],
+        "enabled_features": [
+          "study_templates",
+          "side_toolbar_in_fullscreen_mode",
+          "header_in_fullscreen_mode"
+        ]
+      });
+    }
+
+    // Set Editor text
+    const editor = document.getElementById('pineCodeInput');
+    editor.value = B2_PINE_CODE;
+
+    // Toggle Pine Script Panel
+    const pinePanel = document.getElementById('pinePanel');
+    document.getElementById('toggleEditorBtn').addEventListener('click', () => {
+      pinePanel.classList.toggle('hidden');
+    });
+    document.getElementById('closeEditorBtn').addEventListener('click', () => {
+      pinePanel.classList.add('hidden');
+    });
+
+    // Copy script
+    document.getElementById('copyScriptBtn').addEventListener('click', () => {
+      editor.select();
+      document.execCommand('copy');
+      const btn = document.getElementById('copyScriptBtn');
+      btn.innerText = 'Copied!';
+      setTimeout(() => btn.innerText = 'Copy Script', 2000);
+    });
+
+    // Reset script
+    document.getElementById('resetScriptBtn').addEventListener('click', () => {
+      editor.value = B2_PINE_CODE;
+    });
+
+    // Timeframe selector
+    document.querySelectorAll('.tf-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active-tf'));
+        btn.classList.add('active-tf');
+        currentInterval = btn.getAttribute('data-interval');
+        initChart(currentSymbol, currentInterval);
+      });
+    });
+
+    // Market selector
+    document.getElementById('marketSelect').addEventListener('change', (e) => {
+      currentSymbol = e.target.value;
+      initChart(currentSymbol, currentInterval);
+    });
+
+    // Start
+    initChart(currentSymbol, currentInterval);
+  </script>
+</body>
+</html>
