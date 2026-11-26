@@ -1,0 +1,238 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════════════
+//  GOLD 5m — Volume-Profile edge reversal + DeMarker gate  (strategy "B2")
+//  Faithful port of the Python backtest:
+//    · two rolling volume profiles: 24h and 4h windows, 50 bins, 70% value area
+//    · profiles recomputed every `refresh` bars and held until the next refresh
+//      (this staleness is PART of the strategy, not a bug)
+//    · DeMarker(7) with EMA(3) signal, reversed logic:
+//          long  base = DM < OS  and DM < signal
+//          short base = DM > OB  and DM > signal
+//    · gate: |close - VAL| or |close - VAH| < nearPct  (either profile)
+//    · entry at the close of the signal bar
+//    · exit: TP = tpMult * ATR, SL = slMult * ATR, hard max-hold in bars
+//    · one position at a time
+// ═══════════════════════════════════════════════════════════════════════════
+strategy("Gold VP edge reversal + DeMarker (B2)", overlay=true,
+     max_labels_count=500, max_lines_count=500, max_boxes_count=500,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_contract, commission_value=0.115,
+     initial_capital=10000, currency=currency.USD,
+     process_orders_on_close=true)
+
+// ───────────── inputs ─────────────
+grpP = "Volume profile"
+winH1   = input.float(24.0, "profile 1 window (hours)", minval=1, group=grpP)
+winH2   = input.float(4.0,  "profile 2 window (hours)", minval=0, group=grpP)
+bins    = input.int(50,   "price bins", minval=10, maxval=200, group=grpP)
+vaPct   = input.float(70.0, "value area %", minval=50, maxval=95, group=grpP)
+refresh = input.int(15,   "recompute every N bars", minval=1, maxval=200, group=grpP)
+nearPct = input.float(0.25, "gate: distance to edge (%)", step=0.05, minval=0.01, group=grpP)
+showVP  = input.bool(true, "draw VAH/VAL", group=grpP)
+
+grpD = "DeMarker"
+dmLen  = input.int(7, "DeMarker length", minval=2, group=grpD)
+sigLen = input.int(3, "signal EMA length", minval=1, group=grpD)
+osLvl  = input.float(0.20, "oversold", step=0.01, group=grpD)
+obLvl  = input.float(0.80, "overbought", step=0.01, group=grpD)
+
+grpR = "Risk"
+atrLen  = input.int(14, "ATR length (simple)", minval=2, group=grpR)
+tpMult  = input.float(5.0, "TP = x * ATR", step=0.5, group=grpR)
+slMult  = input.float(1.0, "SL = x * ATR", step=0.5, group=grpR)
+maxHold = input.int(30, "max hold (bars)", minval=1, group=grpR)
+allowL  = input.bool(true, "allow longs", group=grpR)
+allowS  = input.bool(true, "allow shorts", group=grpR)
+
+// ───────────── DeMarker ─────────────
+f_demarker(int len) =>
+    float dmx = math.max(high - high[1], 0.0)
+    float dmn = math.max(low[1] - low, 0.0)
+    float sx  = ta.sma(dmx, len)
+    float sn  = ta.sma(dmn, len)
+    float den = sx + sn
+    den > 0 ? sx / den : 0.5
+
+dm  = f_demarker(dmLen)
+sig = ta.ema(dm, sigLen)
+
+// ───────────── volume profile ─────────────
+var array<float> vol1 = array.new_float(bins, 0.0)
+var array<float> vol2 = array.new_float(bins, 0.0)
+var array<bool>  used1 = array.new_bool(bins, false)
+var array<bool>  used2 = array.new_bool(bins, false)
+
+var float vah1 = na
+var float val1 = na
+var float poc1 = na
+var float vah2 = na
+var float val2 = na
+var float poc2 = na
+
+// returns [val, vah, poc]
+f_profile(int win, array<float> vArr, array<bool> uArr) =>
+    float lo = na
+    float hi = na
+    if win < 30 or bar_index < win + 1
+        [na, na, na]
+    else
+        for i = 1 to win
+            lo := na(lo) ? low[i] : math.min(lo, low[i])
+            hi := na(hi) ? high[i] : math.max(hi, high[i])
+        if na(lo) or na(hi) or hi <= lo
+            [na, na, na]
+        else
+            float bw = (hi - lo) / bins
+            array.fill(vArr, 0.0)
+            for i = 1 to win
+                int b0 = int(math.floor((low[i]  - lo) / bw))
+                int b1 = int(math.floor((high[i] - lo) / bw))
+                b0 := math.max(0, math.min(bins - 1, b0))
+                b1 := math.max(0, math.min(bins - 1, b1))
+                int nb = b1 - b0 + 1
+                float v = nz(volume[i], 1.0) / nb
+                for k = b0 to b1
+                    array.set(vArr, k, array.get(vArr, k) + v)
+            float total = array.sum(vArr)
+            int pocIdx = 0
+            float maxV = -1.0
+            for k = 0 to bins - 1
+                float v = array.get(vArr, k)
+                if v > maxV
+                    maxV := v
+                    pocIdx := k
+            array.fill(uArr, false)
+            array.set(uArr, pocIdx, true)
+            float acc = array.get(vArr, pocIdx)
+            int vLo = pocIdx
+            int vHi = pocIdx
+            float target = total * vaPct / 100.0
+            int guard = 0
+            while acc < target and guard < bins
+                int bestIdx = -1
+                float bestV = -1.0
+                for k = 0 to bins - 1
+                    if not array.get(uArr, k)
+                        float v = array.get(vArr, k)
+                        if v > bestV
+                            bestV := v
+                            bestIdx := k
+                if bestIdx < 0
+                    break
+                array.set(uArr, bestIdx, true)
+                acc += bestV
+                vLo := math.min(vLo, bestIdx)
+                vHi := math.max(vHi, bestIdx)
+                guard += 1
+            [lo + vLo * bw, lo + (vHi + 1) * bw, lo + (pocIdx + 0.5) * bw]
+
+tfMin = timeframe.in_seconds() / 60.0
+w1 = int(math.round(winH1 * 60.0 / tfMin))
+w2 = int(math.round(winH2 * 60.0 / tfMin))
+
+bool doRefresh = (bar_index % refresh) == 0
+if doRefresh
+    [v1, h1, p1] = f_profile(w1, vol1, used1)
+    val1 := v1
+    vah1 := h1
+    poc1 := p1
+
+    if w2 >= 30
+        [v2, h2, p2] = f_profile(w2, vol2, used2)
+        val2 := v2
+        vah2 := h2
+        poc2 := p2
+
+// ───────────── gate ─────────────
+f_near(float lvl) =>
+    not na(lvl) and math.abs(close - lvl) / close < nearPct / 100.0
+
+bool nearEdge = f_near(val1) or f_near(vah1) or f_near(val2) or f_near(vah2)
+
+bool baseL = dm < osLvl and dm < sig
+bool baseS = dm > obLvl and dm > sig
+
+bool longSig  = allowL and baseL and nearEdge
+bool shortSig = allowS and baseS and nearEdge
+
+// ───────────── explain in the data window ─────────────
+plotchar(nearEdge, "gate passed", "·", location.top, size=size.tiny)
+plotshape(longSig  and strategy.position_size == 0, "L", shape.triangleup,
+          location.belowbar, color.new(color.teal, 0), size=size.small)
+plotshape(shortSig and strategy.position_size == 0, "S", shape.triangledown,
+          location.abovebar, color.new(color.maroon, 0), size=size.small)
+
+plot(showVP ? vah1 : na, "VAH 24h", color.new(color.orange, 0), 2)
+plot(showVP ? val1 : na, "VAL 24h", color.new(color.blue, 0), 2,
+     style=plot.style_line)
+plot(showVP ? poc1 : na, "POC 24h", color.new(color.gray, 30), 1,
+     style=plot.style_circles)
+plot(showVP and w2 >= 30 ? vah2 : na, "VAH 4h", color.new(color.orange, 55), 1)
+plot(showVP and w2 >= 30 ? val2 : na, "VAL 4h", color.new(color.blue, 55), 1)
+
+// ───────────── execution ─────────────
+atrS = ta.sma(ta.tr(true), atrLen)
+
+var float entryPx = na
+var int   entryBar = na
+var int   lastExitBar = na
+var float stopPx = na
+var float tpPx = na
+
+bool flat = strategy.position_size == 0
+bool justClosed = strategy.position_size == 0 and strategy.position_size[1] != 0
+if justClosed
+    lastExitBar := bar_index
+// the engine never re-enters on the bar of an exit
+bool canEnter = flat and (na(lastExitBar) or bar_index > lastExitBar)
+
+if canEnter and longSig and atrS > 0
+    strategy.entry("L", strategy.long)
+if canEnter and shortSig and atrS > 0
+    strategy.entry("S", strategy.short)
+
+// capture the fill on the bar the position appears
+if strategy.position_size != 0 and na(entryPx)
+    entryPx := strategy.position_avg_price
+    entryBar := bar_index
+    if strategy.position_size > 0
+        stopPx := entryPx - slMult * atrS
+        tpPx   := entryPx + tpMult * slMult * atrS
+    else
+        stopPx := entryPx + slMult * atrS
+        tpPx   := entryPx - tpMult * slMult * atrS
+
+if strategy.position_size != 0
+    strategy.exit("X", stop=stopPx, limit=tpPx)
+    if not na(entryBar) and (bar_index - entryBar) >= maxHold
+        strategy.close_all(comment="timeout")
+
+if strategy.position_size == 0
+    entryPx := na
+    entryBar := na
+    stopPx := na
+    tpPx := na
+
+// ───────────── table ─────────────
+if barstate.islast
+    var table t = table.new(position.top_right, 2, 7, border_width=1)
+    table.cell(t, 0, 0, "B2 live", bgcolor=color.new(color.black, 20),
+               text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 0, timeframe.period, bgcolor=color.new(color.black, 20),
+               text_color=color.white, text_size=size.small)
+    table.cell(t, 0, 1, "VAH 24h", text_size=size.tiny)
+    table.cell(t, 1, 1, str.tostring(vah1, format.mintick), text_size=size.tiny)
+    table.cell(t, 0, 2, "VAL 24h", text_size=size.tiny)
+    table.cell(t, 1, 2, str.tostring(val1, format.mintick), text_size=size.tiny)
+    table.cell(t, 0, 3, "POC 24h", text_size=size.tiny)
+    table.cell(t, 1, 3, str.tostring(poc1, format.mintick), text_size=size.tiny)
+    table.cell(t, 0, 4, "DeMarker", text_size=size.tiny)
+    table.cell(t, 1, 4, str.tostring(dm, "#.###"), text_size=size.tiny)
+    table.cell(t, 0, 5, "signal", text_size=size.tiny)
+    table.cell(t, 1, 5, str.tostring(sig, "#.###"), text_size=size.tiny)
+    table.cell(t, 0, 6, "gate", text_size=size.tiny)
+    table.cell(t, 1, 6, nearEdge ? "PASS" : "—", text_size=size.tiny,
+               text_color=nearEdge ? color.teal : color.gray)
+
+alertcondition(longSig,  "B2 long",  "Gold B2: LONG signal")
+alertcondition(shortSig, "B2 short", "Gold B2: SHORT signal")
