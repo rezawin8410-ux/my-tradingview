@@ -40,8 +40,8 @@
       background: #2a2e39;
       border-radius: 3px;
     }
-    .custom-scroll::-webkit-scrollbar-thumb:hover {
-      background: #363a45;
+    #pinePanel {
+      height: 220px;
     }
   </style>
 </head>
@@ -81,17 +81,17 @@
     </div>
 
     <!-- Right Controls: Indicators Modal & Pine Studio Toggle -->
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-1.5 shrink-0">
       <!-- Built-in Indicators Quick Selector -->
-      <button id="openIndicatorsModalBtn" class="flex items-center gap-1.5 text-xs font-semibold bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-3 py-1.5 rounded transition">
+      <button id="openIndicatorsModalBtn" class="flex items-center gap-1 text-[11px] font-semibold bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-2 py-1 rounded transition whitespace-nowrap">
         <i class="fa-solid fa-chart-line text-blue-400"></i>
-        <span class="hidden sm:inline">Indicators & Studies</span>
+        <span>Indicators</span>
       </button>
 
       <!-- Pine Editor Toggle Button -->
-      <button id="toggleEditorBtn" class="flex items-center gap-1.5 text-xs font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-3.5 py-1.5 rounded transition shadow-md">
+      <button id="toggleEditorBtn" class="flex items-center gap-1 text-[11px] font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-2.5 py-1 rounded transition shadow-md whitespace-nowrap">
         <i class="fa-solid fa-code"></i>
-        <span>Pine Script Studio</span>
+        <span>Pine Editor</span>
       </button>
     </div>
   </header>
@@ -102,7 +102,7 @@
     <div id="tv_chart_container" class="flex-1 w-full h-full relative"></div>
 
     <!-- Advanced Pine Script Studio (Collapsible Bottom Panel) -->
-    <div id="pinePanel" class="h-80 border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-200 shrink-0 z-30">
+    <div id="pinePanel" class="border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-200 shrink-0 z-30">
       
       <!-- Studio Header / Toolbar -->
       <div class="h-9 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
@@ -425,88 +425,6 @@ downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.re
     let selectedStudies = ["Volume@tv-basicstudies", "MASimple@tv-basicstudies"];
 
     // -------------------------------------------------------------
-    // Monaco Code Editor Initialization
-    // -------------------------------------------------------------
-    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
-    require(['vs/editor/editor.main'], function() {
-      // Register custom Pine Script tokenizer/keywords
-      monaco.languages.register({ id: 'pinescript' });
-      monaco.languages.setMonarchTokensProvider('pinescript', {
-        keywords: [
-          'indicator', 'strategy', 'library', 'plot', 'plotshape', 'plotchar', 'plotcandle', 'plotarrow',
-          'alertcondition', 'input', 'input.int', 'input.float', 'input.bool', 'input.string', 'input.color',
-          'input.source', 'var', 'varip', 'if', 'else', 'for', 'to', 'while', 'switch', 'return',
-          'ta', 'math', 'array', 'table', 'box', 'line', 'label', 'color', 'timeframe', 'request', 'str'
-        ],
-        typeKeywords: ['int', 'float', 'bool', 'string', 'color', 'array', 'matrix', 'map'],
-        operators: ['=', ':=', '+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=', 'and', 'or', 'not', '?'],
-        tokenizer: {
-          root: [
-            [/\/\/.*$/, 'comment'],
-            [/\/\*/, 'comment', '@comment'],
-            [/"([^"\\]|\\.)*"/, 'string'],
-            [/'([^'\\]|\\.)*'/, 'string'],
-            [/@version=[0-9]+/, 'keyword.directive'],
-            [/[a-zA-Z_]\w*/, {
-              cases: {
-                '@keywords': 'keyword',
-                '@typeKeywords': 'type',
-                '@default': 'identifier'
-              }
-            }],
-            [/[0-9]+(\.[0-9]+)?/, 'number'],
-            [/[\{\}\(\)\[\]]/, '@brackets'],
-            [/[,.]/, 'delimiter']
-          ],
-          comment: [
-            [/[^\/*]+/, 'comment'],
-            [/\*\//, 'comment', '@pop'],
-            [/[\/*]/, 'comment']
-          ]
-        }
-      });
-
-      // Define Dark Theme
-      monaco.editor.defineTheme('pine-dark', {
-        base: 'vs-dark',
-        inherit: true,
-        rules: [
-          { token: 'keyword', foreground: '569cd6', fontStyle: 'bold' },
-          { token: 'type', foreground: '4ec9b0' },
-          { token: 'string', foreground: 'ce9178' },
-          { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
-          { token: 'keyword.directive', foreground: 'c586c0', fontStyle: 'bold' },
-          { token: 'number', foreground: 'b5cea8' }
-        ],
-        colors: {
-          'editor.background': '#131722',
-          'editor.foreground': '#d1d4dc',
-          'editorLineNumber.foreground': '#4f5666',
-          'editorLineNumber.activeForeground': '#2962ff',
-          'editor.selectionBackground': '#264f78',
-          'editor.lineHighlightBackground': '#1e222d'
-        }
-      });
-
-      // Create Editor
-      monacoEditor = monaco.editor.create(document.getElementById('monacoHost'), {
-        value: PRESET_SCRIPTS.B2_INDICATOR,
-        language: 'pinescript',
-        theme: 'pine-dark',
-        automaticLayout: true,
-        fontSize: 12,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        wordWrap: 'on'
-      });
-
-      // Update Cursor Position in Footer
-      monacoEditor.onDidChangeCursorPosition(e => {
-        document.getElementById('lineColIndicator').innerText = \`Ln \${e.position.lineNumber}, Col \${e.position.column}\`;
-      });
-    });
-
-    // -------------------------------------------------------------
     // TradingView SuperCharts Core Widget
     // -------------------------------------------------------------
     function initChart(symbol, interval) {
@@ -517,6 +435,104 @@ downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.re
         "interval": interval,
         "timezone": "Etc/UTC",
         "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "toolbar_bg": "#1e222d",
+        "enable_publishing": false,
+        "allow_symbol_change": true,
+        "container_id": "tv_chart_container",
+        "hide_side_toolbar": false,
+        "studies": selectedStudies,
+        "disabled_features": ["use_localstorage_for_settings"],
+        "enabled_features": [
+          "study_templates",
+          "side_toolbar_in_fullscreen_mode",
+          "header_in_fullscreen_mode"
+        ]
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Monaco Code Editor Initialization
+    // -------------------------------------------------------------
+    try {
+      require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
+      require(['vs/editor/editor.main'], function() {
+        monaco.languages.register({ id: 'pinescript' });
+        monaco.languages.setMonarchTokensProvider('pinescript', {
+          keywords: [
+            'indicator', 'strategy', 'library', 'plot', 'plotshape', 'plotchar', 'plotcandle', 'plotarrow',
+            'alertcondition', 'input', 'input.int', 'input.float', 'input.bool', 'input.string', 'input.color',
+            'input.source', 'var', 'varip', 'if', 'else', 'for', 'to', 'while', 'switch', 'return',
+            'ta', 'math', 'array', 'table', 'box', 'line', 'label', 'color', 'timeframe', 'request', 'str'
+          ],
+          typeKeywords: ['int', 'float', 'bool', 'string', 'color', 'array', 'matrix', 'map'],
+          operators: ['=', ':=', '+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=', 'and', 'or', 'not', '?'],
+          tokenizer: {
+            root: [
+              [/\/\/.*$/, 'comment'],
+              [/\/\*/, 'comment', '@comment'],
+              [/"([^"\\]|\\.)*"/, 'string'],
+              [/'([^'\\]|\\.)*'/, 'string'],
+              [/@version=[0-9]+/, 'keyword.directive'],
+              [/[a-zA-Z_]\w*/, {
+                cases: {
+                  '@keywords': 'keyword',
+                  '@typeKeywords': 'type',
+                  '@default': 'identifier'
+                }
+              }],
+              [/[0-9]+(\.[0-9]+)?/, 'number'],
+              [/[\{\}\(\)\[\]]/, '@brackets'],
+              [/[,.]/, 'delimiter']
+            ],
+            comment: [
+              [/[^\/*]+/, 'comment'],
+              [/\*\//, 'comment', '@pop'],
+              [/[\/*]/, 'comment']
+            ]
+          }
+        });
+
+        monaco.editor.defineTheme('pine-dark', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [
+            { token: 'keyword', foreground: '569cd6', fontStyle: 'bold' },
+            { token: 'type', foreground: '4ec9b0' },
+            { token: 'string', foreground: 'ce9178' },
+            { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
+            { token: 'keyword.directive', foreground: 'c586c0', fontStyle: 'bold' },
+            { token: 'number', foreground: 'b5cea8' }
+          ],
+          colors: {
+            'editor.background': '#131722',
+            'editor.foreground': '#d1d4dc',
+            'editorLineNumber.foreground': '#4f5666',
+            'editorLineNumber.activeForeground': '#2962ff',
+            'editor.selectionBackground': '#264f78',
+            'editor.lineHighlightBackground': '#1e222d'
+          }
+        });
+
+        monacoEditor = monaco.editor.create(document.getElementById('monacoHost'), {
+          value: PRESET_SCRIPTS.B2_INDICATOR,
+          language: 'pinescript',
+          theme: 'pine-dark',
+          automaticLayout: true,
+          fontSize: 12,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          wordWrap: 'on'
+        });
+
+        monacoEditor.onDidChangeCursorPosition(e => {
+          document.getElementById('lineColIndicator').innerText = "Ln " + e.position.lineNumber + ", Col " + e.position.column;
+        });
+      });
+    } catch (err) {
+      console.warn("Monaco loader fallback", err);
+    }
         "style": "1",
         "locale": "en",
         "toolbar_bg": "#1e222d",
@@ -622,11 +638,11 @@ downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.re
       const text = document.getElementById('editorStatusText');
       text.innerText = msg;
       if (type === 'error') {
-        container.innerHTML = \`<i class="fa-solid fa-circle-xmark text-red-400 text-[10px]"></i> <span id="editorStatusText" class="text-red-400">\${msg}</span>\`;
+        container.innerHTML = '<i class="fa-solid fa-circle-xmark text-red-400 text-[10px]"></i> <span id="editorStatusText" class="text-red-400">' + msg + '</span>';
       } else if (type === 'success') {
-        container.innerHTML = \`<i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i> <span id="editorStatusText" class="text-emerald-400">\${msg}</span>\`;
+        container.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i> <span id="editorStatusText" class="text-emerald-400">' + msg + '</span>';
       } else {
-        container.innerHTML = \`<i class="fa-solid fa-circle-info text-blue-400 text-[10px]"></i> <span id="editorStatusText" class="text-blue-300">\${msg}</span>\`;
+        container.innerHTML = '<i class="fa-solid fa-circle-info text-blue-400 text-[10px]"></i> <span id="editorStatusText" class="text-blue-300">' + msg + '</span>';
       }
     }
 
@@ -645,10 +661,8 @@ downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.re
       BUILTIN_STUDIES.filter(s => s.name.toLowerCase().includes(filter.toLowerCase())).forEach(study => {
         const item = document.createElement('div');
         item.className = 'flex items-center justify-between p-2 rounded hover:bg-[#2a2e39] cursor-pointer transition';
-        item.innerHTML = \`
-          <span class="text-gray-200 font-medium">\${study.name}</span>
-          <input type="checkbox" \${selectedStudies.includes(study.id) ? 'checked' : ''} class="cursor-pointer accent-blue-600 rounded">
-        \`;
+        const isChecked = selectedStudies.includes(study.id) ? 'checked' : '';
+        item.innerHTML = '<span class="text-gray-200 font-medium">' + study.name + '</span><input type="checkbox" ' + isChecked + ' class="cursor-pointer accent-blue-600 rounded">';
         item.querySelector('input').addEventListener('change', (e) => {
           if (e.target.checked) {
             if (!selectedStudies.includes(study.id)) selectedStudies.push(study.id);
