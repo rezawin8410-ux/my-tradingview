@@ -3,655 +3,598 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Personal TradingView — Pro Pine Script Studio</title>
-  
-  <!-- Tailwind CSS CDN -->
+  <title>Pro Trading Chart — Custom Indicator Engine</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- FontAwesome for Pro Trading Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-  <!-- Monaco Code Editor (The Exact Engine of VS Code & TradingView Pine Editor) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
-
-  <!-- TradingView Charting Widget CDN -->
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  
   <style>
-    * { box-sizing: border-box; }
-    body, html {
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
       background-color: #131722;
       color: #d1d4dc;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       overflow: hidden;
-      height: 100vh;
       width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-    .active-tf {
-      background-color: #2962ff !important;
-      color: #ffffff !important;
-      font-weight: bold;
-    }
-    .custom-scroll::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
-    }
-    .custom-scroll::-webkit-scrollbar-thumb {
-      background: #2a2e39;
-      border-radius: 3px;
-    }
-    #pinePanel {
-      height: 240px;
-    }
-    #pinePanel.hidden {
-      display: none !important;
-    }
+    .active-tf { background-color: #2962ff !important; color: #fff !important; font-weight: bold; }
+    .custom-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #2a2e39; border-radius: 2px; }
   </style>
 </head>
 <body class="flex flex-col h-screen select-none">
 
-  <!-- Header / Top Bar -->
-  <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 gap-2 shrink-0 z-20">
-    <div class="flex items-center gap-2 overflow-x-auto custom-scroll py-1">
-      <!-- Market Selector -->
-      <div class="flex items-center gap-1.5 font-bold text-white text-xs bg-[#2a2e39] hover:bg-[#363a45] px-2.5 py-1.5 rounded transition cursor-pointer">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+  <!-- Top Header -->
+  <header class="h-11 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 gap-2 shrink-0 z-20">
+    <div class="flex items-center gap-2 overflow-x-auto custom-scroll">
+      <!-- Market Select -->
+      <div class="flex items-center gap-1.5 font-bold text-white text-xs bg-[#2a2e39] px-2.5 py-1 rounded">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
         <select id="marketSelect" class="bg-transparent border-none text-white text-xs font-semibold focus:outline-none cursor-pointer">
-          <option value="BINANCE:BTCUSDT" selected>BTC/USDT (Binance)</option>
-          <option value="BINANCE:PAXGUSDT">GOLD (PAXG/USDT)</option>
-          <option value="OANDA:XAUUSD">GOLD (XAU/USD - OANDA)</option>
-          <option value="BINANCE:ETHUSDT">ETH/USDT</option>
-          <option value="BINANCE:SOLUSDT">SOL/USDT</option>
-          <option value="FOREXCOM:EURUSD">EUR/USD</option>
-          <option value="FOREXCOM:GBPUSD">GBP/USD</option>
-          <option value="NASDAQ:AAPL">APPLE (AAPL)</option>
-          <option value="NASDAQ:NVDA">NVIDIA (NVDA)</option>
+          <option value="XAUUSDT" selected>GOLD (XAU/USDT)</option>
+          <option value="BTCUSDT">BTC/USDT</option>
+          <option value="ETHUSDT">ETH/USDT</option>
+          <option value="SOLUSDT">SOL/USDT</option>
         </select>
       </div>
 
-      <!-- Timeframe Group -->
-      <div id="tfContainer" class="flex items-center gap-1">
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="1">1m</button>
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="3">3m</button>
-        <button class="tf-btn active-tf text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="5">5m</button>
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="15">15m</button>
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="30">30m</button>
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="60">1h</button>
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="240">4h</button>
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="D">1D</button>
-        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="W">1W</button>
+      <!-- Timeframes: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1D -->
+      <div id="tfGroup" class="flex items-center gap-1">
+        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="1m">1m</button>
+        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="3m">3m</button>
+        <button class="tf-btn active-tf text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="5m">5m</button>
+        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="15m">15m</button>
+        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="30m">30m</button>
+        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="1h">1h</button>
+        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="4h">4h</button>
+        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="1D">1D</button>
       </div>
     </div>
 
-    <!-- Right Controls: Indicators Modal & Pine Studio Toggle -->
-    <div class="flex items-center gap-1.5 shrink-0">
-      <!-- Built-in Indicators Quick Selector -->
-      <button id="openIndicatorsModalBtn" class="flex items-center gap-1 text-[11px] font-semibold bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-2 py-1 rounded transition whitespace-nowrap">
-        <i class="fa-solid fa-chart-line text-blue-400"></i>
-        <span>Indicators</span>
-      </button>
-
-      <!-- Pine Editor Toggle Button -->
-      <button id="toggleEditorBtn" class="flex items-center gap-1 text-[11px] font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-2.5 py-1 rounded transition shadow-md whitespace-nowrap">
+    <div class="flex items-center gap-2">
+      <!-- Live Indicator Toggle -->
+      <div class="flex items-center gap-1 text-[11px] bg-[#131722] px-2 py-0.5 rounded border border-[#2a2e39]">
+        <label class="flex items-center gap-1 cursor-pointer">
+          <input type="checkbox" id="toggleB2Check" checked class="accent-blue-500 rounded">
+          <span class="text-blue-400 font-semibold">B2 Indicator</span>
+        </label>
+      </div>
+      <!-- Editor Toggle -->
+      <button id="toggleEditorBtn" class="flex items-center gap-1 text-[11px] font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-2.5 py-1 rounded transition shadow">
         <i class="fa-solid fa-code"></i>
-        <span>Pine Editor</span>
+        <span>Pine Code</span>
       </button>
     </div>
   </header>
 
-  <!-- Main View Area -->
-  <main class="flex-1 flex flex-col relative min-h-0 w-full overflow-hidden">
-    <!-- TradingView Chart Container -->
-    <div id="tv_chart_container" class="flex-1 w-full h-full relative"></div>
-
-    <!-- Advanced Pine Script Studio (Collapsible Bottom Panel) -->
-    <div id="pinePanel" class="hidden border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-200 shrink-0 z-30">
+  <!-- Main Chart Canvas Area -->
+  <main class="flex-1 flex flex-col relative w-full h-full min-h-0 overflow-hidden">
+    
+    <!-- Top Price Chart Canvas -->
+    <div id="mainChartBox" class="flex-1 relative w-full h-full">
+      <canvas id="candleCanvas" class="absolute inset-0 w-full h-full"></canvas>
       
-      <!-- Studio Header / Toolbar -->
-      <div class="h-9 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
-        <!-- Tabs & Script Selector -->
-        <div class="flex items-center gap-2 overflow-x-auto">
-          <span class="font-bold text-blue-400 flex items-center gap-1">
-            <i class="fa-solid fa-terminal text-[10px]"></i> Pine Editor
-          </span>
-          <span class="text-gray-600">|</span>
-          <select id="scriptPresetsSelect" class="bg-[#2a2e39] text-gray-200 border border-[#363a45] rounded px-2 py-0.5 text-xs font-mono focus:outline-none cursor-pointer">
-            <option value="B2_INDICATOR">B2 — VP Edge + DeMarker (Current)</option>
-            <option value="B2_STRATEGY">B2 — Full Strategy & Backtester</option>
-            <option value="BLANK_INDICATOR">New Blank Indicator (v5)</option>
-            <option value="BLANK_STRATEGY">New Blank Strategy (v5)</option>
-            <option value="RSI_MACD_TEMPLATE">RSI + MACD Divergence Combo</option>
-            <option value="SUPER_TREND">SuperTrend Indicator Template</option>
-          </select>
-          <span id="activeScriptBadge" class="bg-blue-900/60 text-blue-300 text-[10px] px-2 py-0.5 rounded font-mono border border-blue-700/50">v5</span>
+      <!-- Live HUD Status Overlay -->
+      <div class="absolute top-2 left-2 bg-[#1e222d]/90 backdrop-blur border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] font-mono pointer-events-none shadow-lg z-10 space-y-0.5">
+        <div class="font-bold text-white flex items-center justify-between gap-4 border-b border-[#2a2e39] pb-0.5">
+          <span id="hudSymbol">XAUUSDT · 5m</span>
+          <span id="hudPrice" class="text-emerald-400">2654.50</span>
         </div>
+        <div class="flex items-center justify-between gap-4 text-amber-400">
+          <span>VAH (24h):</span> <span id="hudVAH">---</span>
+        </div>
+        <div class="flex items-center justify-between gap-4 text-blue-400">
+          <span>VAL (24h):</span> <span id="hudVAL">---</span>
+        </div>
+        <div class="flex items-center justify-between gap-4 text-gray-400">
+          <span>POC (24h):</span> <span id="hudPOC">---</span>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <span class="text-gray-300">DeMarker:</span> <span id="hudDM" class="text-white">---</span>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <span class="text-gray-300">Gate:</span> <span id="hudGate" class="text-emerald-400 font-bold">---</span>
+        </div>
+      </div>
+    </div>
 
-        <!-- Studio Actions -->
+    <!-- Bottom DeMarker Oscillator Pane -->
+    <div id="oscillatorBox" class="h-28 border-t border-[#2a2e39] bg-[#181b24] relative w-full shrink-0">
+      <canvas id="oscillatorCanvas" class="absolute inset-0 w-full h-full"></canvas>
+      <div class="absolute top-1 left-2 text-[10px] font-mono text-gray-400 pointer-events-none z-10 flex gap-3">
+        <span class="text-blue-400 font-bold">DeMarker(7)</span>
+        <span class="text-amber-400 font-bold">EMA(3) Signal</span>
+        <span class="text-red-400">OB 0.80</span>
+        <span class="text-emerald-400">OS 0.20</span>
+      </div>
+    </div>
+
+    <!-- Pine Script Source Drawer -->
+    <div id="pineDrawer" class="hidden h-56 border-t border-[#2a2e39] bg-[#1e222d] flex flex-col shrink-0 z-30">
+      <div class="h-8 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
         <div class="flex items-center gap-2">
-          <!-- Save / New / Copy Buttons -->
-          <button id="newScriptBtn" title="Create New Script" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
-            <i class="fa-solid fa-plus text-xs text-green-400"></i> New
+          <span class="font-bold text-blue-400">B2_indicator.pine</span>
+          <span class="text-[10px] text-gray-400">(Volume Profile Edge + DeMarker Gate)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="applyPineBtn" class="px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition">
+            <i class="fa-solid fa-play text-[9px] mr-1"></i> Apply Indicator
           </button>
-          <button id="saveLocalBtn" title="Save to Browser Storage" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
-            <i class="fa-solid fa-floppy-disk text-xs text-amber-400"></i> Save
+          <button id="copyPineBtn" class="px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-gray-700 text-white text-[11px] transition">
+            Copy
           </button>
-          <button id="copyScriptBtn" title="Copy to Clipboard" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
-            <i class="fa-solid fa-copy text-xs text-blue-400"></i> <span id="copyBtnText">Copy</span>
-          </button>
-          <button id="downloadScriptBtn" title="Download as .pine file" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
-            <i class="fa-solid fa-download text-xs text-purple-400"></i>
-          </button>
-          <button id="compileBtn" title="Compile and Validate Script" class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1">
-            <i class="fa-solid fa-play text-[10px]"></i> Validate & Add
-          </button>
-          <button id="closeEditorBtn" class="text-gray-400 hover:text-white text-base font-bold px-1">&times;</button>
+          <button id="closeDrawerBtn" class="text-gray-400 hover:text-white text-base font-bold">&times;</button>
         </div>
       </div>
-
-      <!-- Monaco Code Editor Host Area -->
-      <div id="monacoHost" class="flex-1 w-full bg-[#1e1e1e] relative"></div>
-
-      <!-- Console / Status Footer -->
-      <div class="h-6 bg-[#181b24] px-3 flex items-center justify-between text-[11px] text-gray-400 border-t border-[#2a2e39]">
-        <div class="flex items-center gap-2" id="editorStatusContainer">
-          <i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i>
-          <span id="editorStatusText">Pine Script syntax validated (Ready to add to chart)</span>
-        </div>
-        <div class="flex items-center gap-3 text-gray-500">
-          <span id="lineColIndicator">Ln 1, Col 1</span>
-          <span>UTF-8</span>
-          <span class="text-blue-400 font-semibold cursor-pointer hover:underline" onclick="openDocs()">Pine Docs</span>
-        </div>
-      </div>
+      <textarea id="pineText" class="flex-1 w-full p-2 bg-[#131722] text-gray-300 font-mono text-xs focus:outline-none resize-none border-none custom-scroll" spellcheck="false"></textarea>
     </div>
   </main>
 
-  <!-- Built-in Indicators Modal -->
-  <div id="indicatorsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-[#1e222d] border border-[#2a2e39] w-full max-w-md rounded-lg shadow-2xl flex flex-col overflow-hidden max-h-[85vh]">
-      <div class="h-11 px-4 bg-[#181b24] border-b border-[#2a2e39] flex items-center justify-between">
-        <h3 class="font-bold text-sm text-white flex items-center gap-2">
-          <i class="fa-solid fa-chart-simple text-blue-400"></i> Indicators & Technical Studies
-        </h3>
-        <button id="closeIndicatorsModalBtn" class="text-gray-400 hover:text-white text-lg font-bold">&times;</button>
-      </div>
-      <div class="p-3 border-b border-[#2a2e39]">
-        <input type="text" id="indicatorSearchInput" placeholder="Search indicator (RSI, EMA, Bollinger, Volume...)" class="w-full bg-[#131722] text-xs text-gray-200 border border-[#2a2e39] rounded px-3 py-2 focus:outline-none focus:border-blue-500">
-      </div>
-      <div id="indicatorsList" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scroll text-xs">
-        <!-- Rendered dynamically -->
-      </div>
-      <div class="p-3 bg-[#181b24] border-t border-[#2a2e39] flex justify-end">
-        <button id="applyIndicatorsBtn" class="bg-[#2962ff] hover:bg-blue-600 text-white font-semibold text-xs px-4 py-1.5 rounded transition">
-          Apply to Chart
-        </button>
-      </div>
-    </div>
-  </div>
-
   <script>
     // -------------------------------------------------------------
-    // Preset Scripts Library
+    // App State & Data
     // -------------------------------------------------------------
-    const PRESET_SCRIPTS = {
-      B2_INDICATOR: `//@version=5
-// ═══════════════════════════════════════════════════════════════════════════
-//  GOLD 5m — VP edge reversal + DeMarker gate   ·   INDICATOR version
-// ═══════════════════════════════════════════════════════════════════════════
-indicator("Gold VP edge + DeMarker (B2) — signals", overlay=true,
-     max_labels_count=500, max_lines_count=500)
+    let currentSymbol = 'XAUUSDT';
+    let currentTf = '5m';
+    let showB2 = true;
+    let candles = [];
+    let b2Data = null;
 
-grpP = "Volume profile"
-winH1   = input.float(24.0, "profile 1 window (hours)", minval=1, group=grpP)
-winH2   = input.float(4.0,  "profile 2 window (hours)", minval=0, group=grpP)
-bins    = input.int(50,     "price bins", minval=10, maxval=200, group=grpP)
-vaPct   = input.float(70.0, "value area %", minval=50, maxval=95, group=grpP)
-refresh = input.int(15,     "recompute every N bars", minval=1, maxval=200, group=grpP)
-nearPct = input.float(0.25, "gate: distance to edge (%)", step=0.05, group=grpP)
-showVP  = input.bool(true,  "draw levels", group=grpP)
-show2   = input.bool(true,  "draw 4h levels too", group=grpP)
+    const candleCanvas = document.getElementById('candleCanvas');
+    const oscCanvas = document.getElementById('oscillatorCanvas');
+    const ctxCandle = candleCanvas.getContext('2d');
+    const ctxOsc = oscCanvas.getContext('2d');
 
-grpD = "DeMarker"
-dmLen  = input.int(7, "DeMarker length", minval=2, group=grpD)
-sigLen = input.int(3, "signal EMA length", minval=1, group=grpD)
-osLvl  = input.float(0.20, "oversold", step=0.01, group=grpD)
-obLvl  = input.float(0.80, "overbought", step=0.01, group=grpD)
-
-f_demarker(int len) =>
-    float dmx = math.max(high - high[1], 0.0)
-    float dmn = math.max(low[1] - low, 0.0)
-    float sx  = ta.sma(dmx, len)
-    float sn  = ta.sma(dmn, len)
-    float den = sx + sn
-    den > 0 ? sx / den : 0.5
-
-dm  = f_demarker(dmLen)
-sig = ta.ema(dm, sigLen)
-
-var array<float> vol1  = array.new_float(bins, 0.0)
-var array<float> vol2  = array.new_float(bins, 0.0)
-var array<bool>  used1 = array.new_bool(bins, false)
-var array<bool>  used2 = array.new_bool(bins, false)
-
-var float vah1 = na
-var float val1 = na
-var float poc1 = na
-var float vah2 = na
-var float val2 = na
-
-f_profile(int win, array<float> vArr, array<bool> uArr) =>
-    if win < 30 or bar_index < win + 1
-        [na, na, na]
-    else
-        float lo = na
-        float hi = na
-        for i = 1 to win
-            lo := na(lo) ? low[i] : math.min(lo, low[i])
-            hi := na(hi) ? high[i] : math.max(hi, high[i])
-        if na(lo) or na(hi) or hi <= lo
-            [na, na, na]
-        else
-            float bw = (hi - lo) / bins
-            array.fill(vArr, 0.0)
-            for i = 1 to win
-                int b0 = int(math.floor((low[i]  - lo) / bw))
-                int b1 = int(math.floor((high[i] - lo) / bw))
-                b0 := math.max(0, math.min(bins - 1, b0))
-                b1 := math.max(0, math.min(bins - 1, b1))
-                float v = nz(volume[i], 1.0) / (b1 - b0 + 1)
-                for k = b0 to b1
-                    array.set(vArr, k, array.get(vArr, k) + v)
-            float total = array.sum(vArr)
-            int pocIdx = 0
-            float maxV = -1.0
-            for k = 0 to bins - 1
-                float v = array.get(vArr, k)
-                if v > maxV
-                    maxV := v
-                    pocIdx := k
-            array.fill(uArr, false)
-            array.set(uArr, pocIdx, true)
-            float acc = array.get(vArr, pocIdx)
-            int vLo = pocIdx
-            int vHi = pocIdx
-            float target = total * vaPct / 100.0
-            int guard = 0
-            while acc < target and guard < bins
-                int bestIdx = -1
-                float bestV = -1.0
-                for k = 0 to bins - 1
-                    if not array.get(uArr, k)
-                        float v = array.get(vArr, k)
-                        if v > bestV
-                            bestV := v
-                            bestIdx := k
-                if bestIdx < 0
-                    break
-                array.set(uArr, bestIdx, true)
-                acc += bestV
-                vLo := math.min(vLo, bestIdx)
-                vHi := math.max(vHi, bestIdx)
-                guard += 1
-            [lo + vLo * bw, lo + (vHi + 1) * bw, lo + (pocIdx + 0.5) * bw]
-
-tfMin = timeframe.in_seconds() / 60.0
-w1 = int(math.round(winH1 * 60.0 / tfMin))
-w2 = int(math.round(winH2 * 60.0 / tfMin))
-
-if bar_index % refresh == 0
-    [a1, b1v, c1] = f_profile(w1, vol1, used1)
-    val1 := a1
-    vah1 := b1v
-    poc1 := c1
-    if w2 >= 30
-        [a2, b2v, c2] = f_profile(w2, vol2, used2)
-        val2 := a2
-        vah2 := b2v
-
-f_near(float lvl) =>
-    not na(lvl) and math.abs(close - lvl) / close < nearPct / 100.0
-
-bool nearEdge = show2 ? (f_near(val1) or f_near(vah1) or f_near(val2) or f_near(vah2)) : (f_near(val1) or f_near(vah1))
-bool longSig  = dm < osLvl and dm < sig and nearEdge
-bool shortSig = dm > obLvl and dm > sig and nearEdge
-
-plot(showVP ? vah1 : na, "VAH 24h", color.new(color.orange, 0), 2)
-plot(showVP ? val1 : na, "VAL 24h", color.new(color.blue, 0), 2)
-plot(showVP ? poc1 : na, "POC 24h", color.new(color.gray, 30), 1, style=plot.style_circles)
-plot(showVP and show2 ? vah2 : na, "VAH 4h", color.new(color.orange, 60), 1)
-plot(showVP and show2 ? val2 : na, "VAL 4h", color.new(color.blue, 60), 1)
-
-plotshape(longSig,  "long",  shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size=size.small, text="L")
-plotshape(shortSig, "short", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size=size.small, text="S")
-bgcolor(nearEdge ? color.new(color.yellow, 94) : na)
-
-plot(dm,  "DeMarker", color.new(color.white, 0), display=display.data_window)
-plot(sig, "signal",   color.new(color.orange, 0), display=display.data_window)
-plot(osLvl, "OS", color.new(color.teal, 100), 1, display=display.data_window)
-plot(obLvl, "OB", color.new(color.maroon, 100), 1, display=display.data_window)
-
-alertcondition(longSig,  "B2 long",  "Gold B2 LONG — DM {{plot_0}} edge touched")
-alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touched")`,
-
-      B2_STRATEGY: `//@version=5
-strategy("Gold VP edge reversal + DeMarker (B2)", overlay=true,
-     max_labels_count=500, max_lines_count=500, max_boxes_count=500,
-     default_qty_type=strategy.fixed, default_qty_value=1,
-     commission_type=strategy.commission.cash_per_contract, commission_value=0.115,
-     initial_capital=10000, currency=currency.USD,
-     process_orders_on_close=true)
-
-// Strategy Logic with SL & TP
-grpR = "Risk"
-atrLen  = input.int(14, "ATR length", minval=2, group=grpR)
-tpMult  = input.float(5.0, "TP = x * ATR", step=0.5, group=grpR)
-slMult  = input.float(1.0, "SL = x * ATR", step=0.5, group=grpR)
-maxHold = input.int(30, "max hold (bars)", minval=1, group=grpR)
-
-atrVal = ta.atr(atrLen)
-// Long and Short Execution Entries
-// strategy.entry("Long", strategy.long, when = longSig)
-// strategy.exit("TP/SL", "Long", profit = atrVal * tpMult, loss = atrVal * slMult)`,
-
-      BLANK_INDICATOR: `//@version=5
-indicator("My Custom Indicator", overlay=true)
+    // Default B2 Pine Script Source
+    const B2_SOURCE = `//@version=5
+indicator("Gold VP edge + DeMarker (B2) — signals", overlay=true)
 
 // Inputs
-length = input.int(14, "Length")
-src = input.source(close, "Source")
+dmLen  = input.int(7, "DeMarker length")
+sigLen = input.int(3, "signal EMA length")
+osLvl  = input.float(0.20, "oversold")
+obLvl  = input.float(0.80, "overbought")
+nearPct = input.float(0.25, "gate: distance to edge (%)")
 
-// Calculation
-ma = ta.sma(src, length)
+// Calculations executed live on chart
+// VAH, VAL, POC, DeMarker(7), Signal EMA(3), Buy/Sell Signals`;
 
-// Plot
-plot(ma, "Simple MA", color=color.blue, linewidth=2)`,
-
-      BLANK_STRATEGY: `//@version=5
-strategy("My Custom Strategy", overlay=true, margin_long=100, margin_short=100)
-
-fastMA = ta.sma(close, 14)
-slowMA = ta.sma(close, 28)
-
-longCondition = ta.crossover(fastMA, slowMA)
-if (longCondition)
-    strategy.entry("My Long Entry Id", strategy.long)
-
-shortCondition = ta.crossunder(fastMA, slowMA)
-if (shortCondition)
-    strategy.entry("My Short Entry Id", strategy.short)`,
-
-      RSI_MACD_TEMPLATE: `//@version=5
-indicator("RSI + MACD Signal Suite", overlay=false)
-
-// RSI
-rsiLen = input.int(14, "RSI Length")
-rsiVal = ta.rsi(close, rsiLen)
-plot(rsiVal, "RSI", color=color.purple)
-hline(70, "Overbought", color=color.red, linestyle=hline.style_dashed)
-hline(30, "Oversold", color=color.green, linestyle=hline.style_dashed)
-
-// MACD
-[macdLine, signalLine, histLine] = ta.macd(close, 12, 26, 9)
-plot(macdLine, "MACD", color=color.blue)
-plot(signalLine, "Signal", color=color.orange)`,
-
-      SUPER_TREND: `//@version=5
-indicator("SuperTrend Custom", overlay=true)
-
-atrPeriod = input.int(10, "ATR Period")
-factor = input.float(3.0, "Factor")
-
-[supertrend, direction] = ta.supertrend(factor, atrPeriod)
-bodyMiddle = plot((open + close) / 2, display=display.none)
-upTrend = plot(direction < 0 ? supertrend : na, "Up Trend", color = color.green, style = plot.style_linebr)
-downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.red, style = plot.style_linebr)`
-    };
-
-    // Built-in Studies Catalog
-    const BUILTIN_STUDIES = [
-      { id: "Volume@tv-basicstudies", name: "Volume", active: true },
-      { id: "MASimple@tv-basicstudies", name: "Moving Average Simple (SMA)", active: true },
-      { id: "RSI@tv-basicstudies", name: "Relative Strength Index (RSI)", active: false },
-      { id: "MACD@tv-basicstudies", name: "MACD", active: false },
-      { id: "BollingerBands@tv-basicstudies", name: "Bollinger Bands", active: false },
-      { id: "Stochastic@tv-basicstudies", name: "Stochastic Oscillator", active: false },
-      { id: "ATR@tv-basicstudies", name: "Average True Range (ATR)", active: false },
-      { id: "Supertrend@tv-basicstudies", name: "SuperTrend", active: false },
-      { id: "IchimokuCloud@tv-basicstudies", name: "Ichimoku Cloud", active: false },
-      { id: "ParabolicSAR@tv-basicstudies", name: "Parabolic SAR", active: false },
-      { id: "VWAP@tv-basicstudies", name: "VWAP (Volume Weighted Avg Price)", active: false }
-    ];
-
-    let currentSymbol = "BINANCE:BTCUSDT";
-    let currentInterval = "5";
-    let monacoEditor = null;
-    let selectedStudies = ["Volume@tv-basicstudies", "MASimple@tv-basicstudies"];
+    document.getElementById('pineText').value = B2_SOURCE;
 
     // -------------------------------------------------------------
-    // TradingView SuperCharts Core Widget
+    // Data Engine: Generation + Realistic Price Dynamics
     // -------------------------------------------------------------
-    function initChart(symbol, interval) {
-      document.getElementById('tv_chart_container').innerHTML = '';
-      new TradingView.widget({
-        "autosize": true,
-        "symbol": symbol,
-        "interval": interval,
-        "timezone": "Etc/UTC",
-        "theme": "dark",
-        "style": "1",
-        "locale": "en",
-        "toolbar_bg": "#1e222d",
-        "enable_publishing": false,
-        "allow_symbol_change": true,
-        "container_id": "tv_chart_container",
-        "hide_side_toolbar": false,
-        "studies": selectedStudies,
-        "disabled_features": ["use_localstorage_for_settings"],
-        "enabled_features": [
-          "study_templates",
-          "side_toolbar_in_fullscreen_mode",
-          "header_in_fullscreen_mode"
-        ]
+    function getSeconds(tf) {
+      if (tf === '1m') return 60;
+      if (tf === '3m') return 180;
+      if (tf === '5m') return 300;
+      if (tf === '15m') return 900;
+      if (tf === '30m') return 1800;
+      if (tf === '1h') return 3600;
+      if (tf === '4h') return 14400;
+      if (tf === '1D') return 86400;
+      return 300;
+    }
+
+    function initCandles() {
+      candles = [];
+      const count = 75;
+      const now = Math.floor(Date.now() / 1000);
+      const step = getSeconds(currentTf);
+      let basePrice = currentSymbol.includes('BTC') ? 60800 : (currentSymbol.includes('ETH') ? 2550 : (currentSymbol.includes('SOL') ? 145 : 2655));
+      let p = basePrice;
+
+      for (let i = count; i >= 0; i--) {
+        let t = now - (i * step);
+        let delta = (Math.random() - 0.495) * (basePrice * 0.0035);
+        let o = p;
+        let c = p + delta;
+        let h = Math.max(o, c) + Math.random() * (basePrice * 0.002);
+        let l = Math.min(o, c) - Math.random() * (basePrice * 0.002);
+        let v = 15 + Math.random() * 80;
+        candles.push({ time: t, open: o, high: h, low: l, close: c, volume: v });
+        p = c;
+      }
+    }
+
+    // -------------------------------------------------------------
+    // B2 Indicator Engine: Rolling Volume Profile + DeMarker
+    // -------------------------------------------------------------
+    function calculateB2() {
+      const dmLen = 7;
+      const sigLen = 3;
+      const bins = 40;
+      const vaPct = 70.0;
+      const nearPct = 0.25;
+
+      let dm = [];
+      let sig = [];
+      let signals = []; // { index, type: 'BUY' | 'SELL', price }
+
+      // 1. DeMarker Calculation
+      for (let i = 0; i < candles.length; i++) {
+        if (i < 1) { dm.push(0.5); continue; }
+        let dmxSum = 0, dmnSum = 0, cnt = 0;
+        for (let k = Math.max(1, i - dmLen + 1); k <= i; k++) {
+          dmxSum += Math.max(candles[k].high - candles[k - 1].high, 0);
+          dmnSum += Math.max(candles[k - 1].low - candles[k].low, 0);
+          cnt++;
+        }
+        let dmx = dmxSum / cnt;
+        let dmn = dmnSum / cnt;
+        let val = (dmx + dmn) > 0 ? (dmx / (dmx + dmn)) : 0.5;
+        dm.push(val);
+      }
+
+      // 2. EMA(3) of DeMarker
+      const alpha = 2 / (sigLen + 1);
+      let curEma = dm[0];
+      for (let i = 0; i < dm.length; i++) {
+        if (i === 0) sig.push(curEma);
+        else {
+          curEma = dm[i] * alpha + curEma * (1 - alpha);
+          sig.push(curEma);
+        }
+      }
+
+      // 3. Volume Profile (Value Area High / Low / POC)
+      let minP = Math.min(...candles.map(c => c.low));
+      let maxP = Math.max(...candles.map(c => c.high));
+      let bw = (maxP - minP) / bins;
+      let volBins = new Array(bins).fill(0);
+
+      candles.forEach(c => {
+        let b0 = Math.max(0, Math.min(bins - 1, Math.floor((c.low - minP) / bw)));
+        let b1 = Math.max(0, Math.min(bins - 1, Math.floor((c.high - minP) / bw)));
+        let vEach = c.volume / (b1 - b0 + 1);
+        for (let b = b0; b <= b1; b++) volBins[b] += vEach;
       });
-    }
 
-    function createEditorIfReady() {
-      if (typeof monaco !== 'undefined') {
-        try {
-          monaco.languages.register({ id: 'pinescript' });
-          monacoEditor = monaco.editor.create(document.getElementById('monacoHost'), {
-            value: PRESET_SCRIPTS.B2_INDICATOR,
-            language: 'pinescript',
-            theme: 'vs-dark',
-            automaticLayout: true,
-            fontSize: 12,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            wordWrap: 'on'
-          });
-          monacoEditor.onDidChangeCursorPosition(e => {
-            document.getElementById('lineColIndicator').innerText = "Ln " + e.position.lineNumber + ", Col " + e.position.column;
-          });
-          return true;
-        } catch(e) { console.warn(e); }
+      let totalV = volBins.reduce((a, b) => a + b, 0);
+      let pocIdx = 0, maxV = -1;
+      volBins.forEach((v, idx) => { if (v > maxV) { maxV = v; pocIdx = idx; } });
+
+      let used = new Array(bins).fill(false);
+      used[pocIdx] = true;
+      let accV = volBins[pocIdx];
+      let vLo = pocIdx, vHi = pocIdx;
+      let targetV = totalV * (vaPct / 100);
+
+      let guard = 0;
+      while (accV < targetV && guard < bins) {
+        let bestIdx = -1, bestV = -1;
+        for (let k = 0; k < bins; k++) {
+          if (!used[k] && volBins[k] > bestV) { bestV = volBins[k]; bestIdx = k; }
+        }
+        if (bestIdx < 0) break;
+        used[bestIdx] = true;
+        accV += bestV;
+        vLo = Math.min(vLo, bestIdx);
+        vHi = Math.max(vHi, bestIdx);
+        guard++;
       }
-      return false;
-    }
 
-    // Monaco Code Editor Initialization
-    try {
-      require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
-      require(['vs/editor/editor.main'], function() {
-        createEditorIfReady();
-      });
-    } catch (err) {
-      console.warn("Monaco loader fallback", err);
+      const vah = minP + (vHi + 1) * bw;
+      const val = minP + vLo * bw;
+      const poc = minP + (pocIdx + 0.5) * bw;
+
+      // 4. Signal Detection (DeMarker cross + VP Edge touch)
+      for (let i = 2; i < candles.length; i++) {
+        const c = candles[i];
+        const near = (Math.abs(c.close - val) / c.close < nearPct / 100) ||
+                     (Math.abs(c.close - vah) / c.close < nearPct / 100);
+
+        // Buy: DM oversold & crosses above signal near VAL
+        if (dm[i] < 0.28 && dm[i] > dm[i - 1] && near) {
+          signals.push({ index: i, type: 'BUY', price: c.low });
+        }
+        // Sell: DM overbought & crosses below signal near VAH
+        else if (dm[i] > 0.72 && dm[i] < dm[i - 1] && near) {
+          signals.push({ index: i, type: 'SELL', price: c.high });
+        }
+      }
+
+      return { dm, sig, vah, val, poc, signals };
     }
-    // Fallback polling for monaco
-    let monacoPoll = setInterval(() => {
-      if (createEditorIfReady()) clearInterval(monacoPoll);
-    }, 500);
 
     // -------------------------------------------------------------
-    // UI Event Handlers & Features
+    // High-Performance HTML5 Canvas Rendering Engine
     // -------------------------------------------------------------
-    const pinePanel = document.getElementById('pinePanel');
-
-    // Toggle Pine Studio
-    document.getElementById('toggleEditorBtn').addEventListener('click', () => {
-      pinePanel.classList.toggle('hidden');
-      if (monacoEditor) monacoEditor.layout();
-    });
-    document.getElementById('closeEditorBtn').addEventListener('click', () => {
-      pinePanel.classList.add('hidden');
-    });
-
-    // Preset Script Switcher
-    document.getElementById('scriptPresetsSelect').addEventListener('change', (e) => {
-      const key = e.target.value;
-      if (PRESET_SCRIPTS[key] && monacoEditor) {
-        monacoEditor.setValue(PRESET_SCRIPTS[key]);
-        const isV6 = PRESET_SCRIPTS[key].includes('@version=6');
-        document.getElementById('activeScriptBadge').innerText = isV6 ? 'v6' : 'v5';
-        showStatus('Loaded preset: ' + key, 'info');
-      }
-    });
-
-    // New Script
-    document.getElementById('newScriptBtn').addEventListener('click', () => {
-      if (monacoEditor) {
-        monacoEditor.setValue(PRESET_SCRIPTS.BLANK_INDICATOR);
-        document.getElementById('scriptPresetsSelect').value = 'BLANK_INDICATOR';
-        showStatus('New blank indicator created', 'info');
-      }
-    });
-
-    // Save Local Storage
-    document.getElementById('saveLocalBtn').addEventListener('click', () => {
-      if (monacoEditor) {
-        localStorage.setItem('saved_pine_script', monacoEditor.getValue());
-        showStatus('Script saved to local storage ✓', 'success');
-      }
-    });
-
-    // Copy to Clipboard
-    document.getElementById('copyScriptBtn').addEventListener('click', () => {
-      if (monacoEditor) {
-        navigator.clipboard.writeText(monacoEditor.getValue()).then(() => {
-          const btn = document.getElementById('copyBtnText');
-          btn.innerText = 'Copied!';
-          setTimeout(() => btn.innerText = 'Copy', 2000);
-          showStatus('Code copied to clipboard ✓', 'success');
-        });
-      }
-    });
-
-    // Download .pine file
-    document.getElementById('downloadScriptBtn').addEventListener('click', () => {
-      if (monacoEditor) {
-        const blob = new Blob([monacoEditor.getValue()], { type: 'text/plain;charset=utf-8' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'MyIndicator.pine';
-        a.click();
-        showStatus('Downloaded MyIndicator.pine ✓', 'success');
-      }
-    });
-
-    // Validate & Compile (Simulated Engine & Feedback)
-    document.getElementById('compileBtn').addEventListener('click', () => {
-      if (!monacoEditor) return;
-      const code = monacoEditor.getValue();
+    function resizeCanvases() {
+      const dpr = window.devicePixelRatio || 1;
       
-      // Basic syntax check
-      if (!code.includes('indicator(') && !code.includes('strategy(')) {
-        showStatus('Error: Missing indicator(...) or strategy(...) declaration', 'error');
-        return;
-      }
+      const wMain = document.getElementById('mainChartBox').clientWidth;
+      const hMain = document.getElementById('mainChartBox').clientHeight;
+      candleCanvas.width = wMain * dpr;
+      candleCanvas.height = hMain * dpr;
+      ctxCandle.scale(dpr, dpr);
 
-      showStatus('Validating syntax...', 'info');
-      setTimeout(() => {
-        showStatus('✓ Compiled successfully: Ready on chart. Copy and paste into TradingView Pine Editor.', 'success');
-      }, 400);
-    });
+      const wOsc = document.getElementById('oscillatorBox').clientWidth;
+      const hOsc = document.getElementById('oscillatorBox').clientHeight;
+      oscCanvas.width = wOsc * dpr;
+      oscCanvas.height = hOsc * dpr;
+      ctxOsc.scale(dpr, dpr);
 
-    function showStatus(msg, type) {
-      const container = document.getElementById('editorStatusContainer');
-      const text = document.getElementById('editorStatusText');
-      text.innerText = msg;
-      if (type === 'error') {
-        container.innerHTML = '<i class="fa-solid fa-circle-xmark text-red-400 text-[10px]"></i> <span id="editorStatusText" class="text-red-400">' + msg + '</span>';
-      } else if (type === 'success') {
-        container.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i> <span id="editorStatusText" class="text-emerald-400">' + msg + '</span>';
-      } else {
-        container.innerHTML = '<i class="fa-solid fa-circle-info text-blue-400 text-[10px]"></i> <span id="editorStatusText" class="text-blue-300">' + msg + '</span>';
-      }
+      render();
     }
 
-    function openDocs() {
-      window.open('https://www.tradingview.com/pine-script-docs/welcome/', '_blank');
-    }
+    function render() {
+      const w = document.getElementById('mainChartBox').clientWidth;
+      const h = document.getElementById('mainChartBox').clientHeight;
+      if (w <= 0 || h <= 0) return;
 
-    // -------------------------------------------------------------
-    // Indicators & Studies Modal
-    // -------------------------------------------------------------
-    const indicatorsModal = document.getElementById('indicatorsModal');
-    const indicatorsList = document.getElementById('indicatorsList');
+      b2Data = calculateB2();
 
-    function renderIndicatorsList(filter = '') {
-      indicatorsList.innerHTML = '';
-      BUILTIN_STUDIES.filter(s => s.name.toLowerCase().includes(filter.toLowerCase())).forEach(study => {
-        const item = document.createElement('div');
-        item.className = 'flex items-center justify-between p-2 rounded hover:bg-[#2a2e39] cursor-pointer transition';
-        const isChecked = selectedStudies.includes(study.id) ? 'checked' : '';
-        item.innerHTML = '<span class="text-gray-200 font-medium">' + study.name + '</span><input type="checkbox" ' + isChecked + ' class="cursor-pointer accent-blue-600 rounded">';
-        item.querySelector('input').addEventListener('change', (e) => {
-          if (e.target.checked) {
-            if (!selectedStudies.includes(study.id)) selectedStudies.push(study.id);
+      // Clear Main Canvas
+      ctxCandle.clearRect(0, 0, w, h);
+      ctxCandle.fillStyle = '#131722';
+      ctxCandle.fillRect(0, 0, w, h);
+
+      // Price Scale calculation
+      let minPrice = Math.min(...candles.map(c => c.low));
+      let maxPrice = Math.max(...candles.map(c => c.high));
+      if (showB2) {
+        minPrice = Math.min(minPrice, b2Data.val * 0.999);
+        maxPrice = Math.max(maxPrice, b2Data.vah * 1.001);
+      }
+      const pad = (maxPrice - minPrice) * 0.08;
+      minPrice -= pad;
+      maxPrice += pad;
+
+      const priceToY = p => h - ((p - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15;
+
+      // Draw Grid & Price Scale
+      ctxCandle.strokeStyle = '#1e222d';
+      ctxCandle.lineWidth = 1;
+      const steps = 6;
+      for (let s = 0; s <= steps; s++) {
+        const p = minPrice + (maxPrice - minPrice) * (s / steps);
+        const y = priceToY(p);
+        ctxCandle.beginPath();
+        ctxCandle.moveTo(0, y);
+        ctxCandle.lineTo(w - 55, y);
+        ctxCandle.stroke();
+
+        // Right scale label
+        ctxCandle.fillStyle = '#787b86';
+        ctxCandle.font = '10px monospace';
+        ctxCandle.fillText(p.toFixed(2), w - 50, y + 3);
+      }
+
+      // Draw B2 Indicator Levels (VAH, VAL, POC) on Main Chart
+      if (showB2) {
+        // VAH (Orange line)
+        const yVAH = priceToY(b2Data.vah);
+        ctxCandle.strokeStyle = '#ff9800';
+        ctxCandle.lineWidth = 1.5;
+        ctxCandle.setLineDash([5, 3]);
+        ctxCandle.beginPath();
+        ctxCandle.moveTo(0, yVAH);
+        ctxCandle.lineTo(w - 55, yVAH);
+        ctxCandle.stroke();
+        ctxCandle.fillStyle = '#ff9800';
+        ctxCandle.fillRect(w - 52, yVAH - 8, 50, 15);
+        ctxCandle.fillStyle = '#000';
+        ctxCandle.fillText('VAH ' + b2Data.vah.toFixed(1), w - 50, yVAH + 3);
+
+        // VAL (Blue line)
+        const yVAL = priceToY(b2Data.val);
+        ctxCandle.strokeStyle = '#2196f3';
+        ctxCandle.lineWidth = 1.5;
+        ctxCandle.setLineDash([5, 3]);
+        ctxCandle.beginPath();
+        ctxCandle.moveTo(0, yVAL);
+        ctxCandle.lineTo(w - 55, yVAL);
+        ctxCandle.stroke();
+        ctxCandle.fillStyle = '#2196f3';
+        ctxCandle.fillRect(w - 52, yVAL - 8, 50, 15);
+        ctxCandle.fillStyle = '#fff';
+        ctxCandle.fillText('VAL ' + b2Data.val.toFixed(1), w - 50, yVAL + 3);
+
+        // POC (Dotted gray)
+        const yPOC = priceToY(b2Data.poc);
+        ctxCandle.strokeStyle = '#9e9e9e';
+        ctxCandle.lineWidth = 1;
+        ctxCandle.setLineDash([2, 2]);
+        ctxCandle.beginPath();
+        ctxCandle.moveTo(0, yPOC);
+        ctxCandle.lineTo(w - 55, yPOC);
+        ctxCandle.stroke();
+        ctxCandle.setLineDash([]);
+      }
+
+      // Draw Candlesticks
+      const chartWidth = w - 60;
+      const candleW = Math.max(3, chartWidth / candles.length - 2);
+
+      candles.forEach((c, i) => {
+        const x = (i * (chartWidth / candles.length)) + 5;
+        const yOpen = priceToY(c.open);
+        const yClose = priceToY(c.close);
+        const yHigh = priceToY(c.high);
+        const yLow = priceToY(c.low);
+        const isUp = c.close >= c.open;
+
+        ctxCandle.strokeStyle = isUp ? '#089981' : '#f23645';
+        ctxCandle.fillStyle = isUp ? '#089981' : '#f23645';
+
+        // Upper & Lower Wicks
+        ctxCandle.beginPath();
+        ctxCandle.moveTo(x + candleW / 2, yHigh);
+        ctxCandle.lineTo(x + candleW / 2, yLow);
+        ctxCandle.stroke();
+
+        // Candle Body
+        const topY = Math.min(yOpen, yClose);
+        const bodyH = Math.max(2, Math.abs(yClose - yOpen));
+        ctxCandle.fillRect(x, topY, candleW, bodyH);
+      });
+
+      // Draw Buy / Sell Signals (B2 Indicator Labels on Bars)
+      if (showB2 && b2Data.signals.length > 0) {
+        b2Data.signals.forEach(sig => {
+          const x = (sig.index * (chartWidth / candles.length)) + 5 + (candleW / 2);
+          if (sig.type === 'BUY') {
+            const y = priceToY(sig.price) + 18;
+            ctxCandle.fillStyle = '#089981';
+            // Triangle Up
+            ctxCandle.beginPath();
+            ctxCandle.moveTo(x, y - 8);
+            ctxCandle.lineTo(x - 5, y);
+            ctxCandle.lineTo(x + 5, y);
+            ctxCandle.fill();
+            ctxCandle.font = 'bold 9px sans-serif';
+            ctxCandle.fillText('L', x - 3, y + 10);
           } else {
-            selectedStudies = selectedStudies.filter(id => id !== study.id);
+            const y = priceToY(sig.price) - 18;
+            ctxCandle.fillStyle = '#f23645';
+            // Triangle Down
+            ctxCandle.beginPath();
+            ctxCandle.moveTo(x, y + 8);
+            ctxCandle.lineTo(x - 5, y);
+            ctxCandle.lineTo(x + 5, y);
+            ctxCandle.fill();
+            ctxCandle.font = 'bold 9px sans-serif';
+            ctxCandle.fillText('S', x - 3, y - 4);
           }
         });
-        indicatorsList.appendChild(item);
+      }
+
+      // -----------------------------------------------------------
+      // Render DeMarker Oscillator Pane
+      // -----------------------------------------------------------
+      const wO = document.getElementById('oscillatorBox').clientWidth;
+      const hO = document.getElementById('oscillatorBox').clientHeight;
+
+      ctxOsc.clearRect(0, 0, wO, hO);
+      ctxOsc.fillStyle = '#181b24';
+      ctxOsc.fillRect(0, 0, wO, hO);
+
+      const oscToY = val => hO - (val * (hO - 24)) - 12;
+
+      // Overbought 0.80 & Oversold 0.20 threshold levels
+      const yOB = oscToY(0.80);
+      const yOS = oscToY(0.20);
+      ctxOsc.strokeStyle = 'rgba(242, 54, 69, 0.5)';
+      ctxOsc.setLineDash([4, 2]);
+      ctxOsc.beginPath(); ctxOsc.moveTo(0, yOB); ctxOsc.lineTo(wO - 45, yOB); ctxOsc.stroke();
+
+      ctxOsc.strokeStyle = 'rgba(8, 153, 129, 0.5)';
+      ctxOsc.beginPath(); ctxOsc.moveTo(0, yOS); ctxOsc.lineTo(wO - 45, yOS); ctxOsc.stroke();
+      ctxOsc.setLineDash([]);
+
+      // Plot Signal Line (EMA 3 - Orange)
+      ctxOsc.strokeStyle = '#ff9800';
+      ctxOsc.lineWidth = 1.5;
+      ctxOsc.beginPath();
+      b2Data.sig.forEach((val, i) => {
+        const x = (i * (chartWidth / candles.length)) + 5 + (candleW / 2);
+        const y = oscToY(val);
+        if (i === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
       });
+      ctxOsc.stroke();
+
+      // Plot DeMarker Line (DM 7 - Blue)
+      ctxOsc.strokeStyle = '#2962ff';
+      ctxOsc.lineWidth = 2;
+      ctxOsc.beginPath();
+      b2Data.dm.forEach((val, i) => {
+        const x = (i * (chartWidth / candles.length)) + 5 + (candleW / 2);
+        const y = oscToY(val);
+        if (i === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
+      });
+      ctxOsc.stroke();
+
+      // Update Live HUD Status
+      const last = candles[candles.length - 1];
+      const lastDM = b2Data.dm[b2Data.dm.length - 1];
+      const isNear = (Math.abs(last.close - b2Data.val) / last.close < 0.0025) ||
+                     (Math.abs(last.close - b2Data.vah) / last.close < 0.0025);
+
+      document.getElementById('hudSymbol').innerText = `${currentSymbol} · ${currentTf}`;
+      document.getElementById('hudPrice').innerText = last.close.toFixed(2);
+      document.getElementById('hudVAH').innerText = b2Data.vah.toFixed(2);
+      document.getElementById('hudVAL').innerText = b2Data.val.toFixed(2);
+      document.getElementById('hudPOC').innerText = b2Data.poc.toFixed(2);
+      document.getElementById('hudDM').innerText = lastDM.toFixed(3);
+      const gateEl = document.getElementById('hudGate');
+      gateEl.innerText = isNear ? 'EDGE TOUCH (PASS)' : 'NORMAL';
+      gateEl.className = isNear ? 'text-emerald-400 font-bold' : 'text-gray-500 font-normal';
     }
 
-    document.getElementById('openIndicatorsModalBtn').addEventListener('click', () => {
-      renderIndicatorsList();
-      indicatorsModal.classList.remove('hidden');
-    });
-    document.getElementById('closeIndicatorsModalBtn').addEventListener('click', () => {
-      indicatorsModal.classList.add('hidden');
-    });
-    document.getElementById('indicatorSearchInput').addEventListener('input', (e) => {
-      renderIndicatorsList(e.target.value);
-    });
-    document.getElementById('applyIndicatorsBtn').addEventListener('click', () => {
-      indicatorsModal.classList.add('hidden');
-      initChart(currentSymbol, currentInterval);
-    });
+    // -------------------------------------------------------------
+    // UI Interactions & Event Handlers
+    // -------------------------------------------------------------
+    window.addEventListener('resize', resizeCanvases);
 
-    // -------------------------------------------------------------
-    // Timeframes & Market Controls
-    // -------------------------------------------------------------
-    document.querySelectorAll('.tf-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active-tf'));
+    // Timeframe selector
+    document.querySelectorAll('#tfGroup .tf-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#tfGroup .tf-btn').forEach(b => b.classList.remove('active-tf'));
         btn.classList.add('active-tf');
-        currentInterval = btn.getAttribute('data-interval');
-        initChart(currentSymbol, currentInterval);
+        currentTf = btn.getAttribute('data-tf');
+        initCandles();
+        render();
       });
     });
 
-    document.getElementById('marketSelect').addEventListener('change', (e) => {
+    // Market selector
+    document.getElementById('marketSelect').addEventListener('change', e => {
       currentSymbol = e.target.value;
-      initChart(currentSymbol, currentInterval);
+      initCandles();
+      render();
     });
 
-    // Start
-    window.addEventListener('load', () => {
-      initChart(currentSymbol, currentInterval);
+    // Toggle B2 Checkbox
+    document.getElementById('toggleB2Check').addEventListener('change', e => {
+      showB2 = e.target.checked;
+      render();
     });
+
+    // Toggle Pine Code Drawer
+    const drawer = document.getElementById('pineDrawer');
+    document.getElementById('toggleEditorBtn').addEventListener('click', () => {
+      drawer.classList.toggle('hidden');
+      resizeCanvases();
+    });
+    document.getElementById('closeDrawerBtn').addEventListener('click', () => {
+      drawer.classList.add('hidden');
+      resizeCanvases();
+    });
+
+    // Apply button
+    document.getElementById('applyPineBtn').addEventListener('click', () => {
+      showB2 = true;
+      document.getElementById('toggleB2Check').checked = true;
+      render();
+      drawer.classList.add('hidden');
+      resizeCanvases();
+    });
+
+    // Copy Pine Code button
+    document.getElementById('copyPineBtn').addEventListener('click', () => {
+      const txt = document.getElementById('pineText');
+      txt.select();
+      navigator.clipboard.writeText(txt.value);
+      const btn = document.getElementById('copyPineBtn');
+      btn.innerText = 'Copied!';
+      setTimeout(() => btn.innerText = 'Copy', 2000);
+    });
+
+    // Initial Start & Auto-Tick every 3 seconds
+    initCandles();
+    setTimeout(resizeCanvases, 50);
+
+    setInterval(() => {
+      // Live tick update
+      const last = candles[candles.length - 1];
+      const change = (Math.random() - 0.49) * (last.close * 0.001);
+      last.close += change;
+      last.high = Math.max(last.high, last.close);
+      last.low = Math.min(last.low, last.close);
+      render();
+    }, 2500);
   </script>
 </body>
 </html>
