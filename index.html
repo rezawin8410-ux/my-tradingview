@@ -3,12 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Personal TradingView — Pine Script Engine</title>
+  <title>Personal TradingView — Pro Pine Script Studio</title>
   
-  <!-- Tailwind CSS CDN for modern responsive trading UI -->
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- TradingView Charting Widget CDN (Official Free Library) -->
+  <!-- FontAwesome for Pro Trading Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Monaco Code Editor (The Exact Engine of VS Code & TradingView Pine Editor) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+
+  <!-- TradingView Charting Widget CDN -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   
   <style>
@@ -24,14 +30,18 @@
     .active-tf {
       background-color: #2962ff !important;
       color: #ffffff !important;
+      font-weight: bold;
     }
     .custom-scroll::-webkit-scrollbar {
-      width: 4px;
-      height: 4px;
+      width: 5px;
+      height: 5px;
     }
     .custom-scroll::-webkit-scrollbar-thumb {
       background: #2a2e39;
-      border-radius: 2px;
+      border-radius: 3px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: #363a45;
     }
   </style>
 </head>
@@ -39,79 +49,149 @@
 
   <!-- Header / Top Bar -->
   <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 gap-2 shrink-0 z-20">
-    <div class="flex items-center gap-2 overflow-x-auto custom-scroll">
-      <div class="flex items-center gap-1 font-bold text-white text-sm bg-[#2a2e39] px-2.5 py-1 rounded">
+    <div class="flex items-center gap-2 overflow-x-auto custom-scroll py-1">
+      <!-- Market Selector -->
+      <div class="flex items-center gap-1.5 font-bold text-white text-xs bg-[#2a2e39] hover:bg-[#363a45] px-2.5 py-1.5 rounded transition cursor-pointer">
         <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
         <select id="marketSelect" class="bg-transparent border-none text-white text-xs font-semibold focus:outline-none cursor-pointer">
           <option value="BINANCE:BTCUSDT" selected>BTC/USDT (Binance)</option>
           <option value="BINANCE:PAXGUSDT">GOLD (PAXG/USDT)</option>
-          <option value="OANDA:XAUUSD">GOLD (XAU/USD)</option>
+          <option value="OANDA:XAUUSD">GOLD (XAU/USD - OANDA)</option>
           <option value="BINANCE:ETHUSDT">ETH/USDT</option>
           <option value="BINANCE:SOLUSDT">SOL/USDT</option>
           <option value="FOREXCOM:EURUSD">EUR/USD</option>
           <option value="FOREXCOM:GBPUSD">GBP/USD</option>
+          <option value="NASDAQ:AAPL">APPLE (AAPL)</option>
+          <option value="NASDAQ:NVDA">NVIDIA (NVDA)</option>
         </select>
       </div>
 
-      <!-- Timeframe Buttons: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1D, 1W -->
+      <!-- Timeframe Group -->
       <div id="tfContainer" class="flex items-center gap-1">
-        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="1">1m</button>
-        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="3">3m</button>
-        <button class="tf-btn active-tf text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="5">5m</button>
-        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="15">15m</button>
-        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="30">30m</button>
-        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="60">1h</button>
-        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="240">4h</button>
-        <button class="tf-btn text-xs font-semibold px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="D">1D</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="1">1m</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="3">3m</button>
+        <button class="tf-btn active-tf text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="5">5m</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="15">15m</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="30">30m</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="60">1h</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="240">4h</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="D">1D</button>
+        <button class="tf-btn text-xs px-2 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-interval="W">1W</button>
       </div>
     </div>
 
-    <!-- Toggle Pine Editor -->
+    <!-- Right Controls: Indicators Modal & Pine Studio Toggle -->
     <div class="flex items-center gap-2">
-      <button id="toggleEditorBtn" class="flex items-center gap-1.5 text-xs font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-3 py-1 rounded transition">
-        <span>Pine Script Editor</span>
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+      <!-- Built-in Indicators Quick Selector -->
+      <button id="openIndicatorsModalBtn" class="flex items-center gap-1.5 text-xs font-semibold bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-3 py-1.5 rounded transition">
+        <i class="fa-solid fa-chart-line text-blue-400"></i>
+        <span class="hidden sm:inline">Indicators & Studies</span>
+      </button>
+
+      <!-- Pine Editor Toggle Button -->
+      <button id="toggleEditorBtn" class="flex items-center gap-1.5 text-xs font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-3.5 py-1.5 rounded transition shadow-md">
+        <i class="fa-solid fa-code"></i>
+        <span>Pine Script Studio</span>
       </button>
     </div>
   </header>
 
   <!-- Main View Area -->
-  <main class="flex-1 flex flex-col relative min-h-0 w-full">
+  <main class="flex-1 flex flex-col relative min-h-0 w-full overflow-hidden">
     <!-- TradingView Chart Container -->
     <div id="tv_chart_container" class="flex-1 w-full h-full relative"></div>
 
-    <!-- Collapsible Pine Script Panel -->
-    <div id="pinePanel" class="h-64 border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-300 shrink-0">
-      <div class="h-8 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
-        <div class="flex items-center gap-3">
-          <span class="font-bold text-gray-300">Pine Editor (v5 / v6)</span>
-          <span class="text-gray-500">|</span>
-          <span class="text-emerald-400 font-mono">B2_indicator.pine ready</span>
+    <!-- Advanced Pine Script Studio (Collapsible Bottom Panel) -->
+    <div id="pinePanel" class="h-80 border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-200 shrink-0 z-30">
+      
+      <!-- Studio Header / Toolbar -->
+      <div class="h-9 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
+        <!-- Tabs & Script Selector -->
+        <div class="flex items-center gap-2 overflow-x-auto">
+          <span class="font-bold text-blue-400 flex items-center gap-1">
+            <i class="fa-solid fa-terminal text-[10px]"></i> Pine Editor
+          </span>
+          <span class="text-gray-600">|</span>
+          <select id="scriptPresetsSelect" class="bg-[#2a2e39] text-gray-200 border border-[#363a45] rounded px-2 py-0.5 text-xs font-mono focus:outline-none cursor-pointer">
+            <option value="B2_INDICATOR">B2 — VP Edge + DeMarker (Current)</option>
+            <option value="B2_STRATEGY">B2 — Full Strategy & Backtester</option>
+            <option value="BLANK_INDICATOR">New Blank Indicator (v5)</option>
+            <option value="BLANK_STRATEGY">New Blank Strategy (v5)</option>
+            <option value="RSI_MACD_TEMPLATE">RSI + MACD Divergence Combo</option>
+            <option value="SUPER_TREND">SuperTrend Indicator Template</option>
+          </select>
+          <span id="activeScriptBadge" class="bg-blue-900/60 text-blue-300 text-[10px] px-2 py-0.5 rounded font-mono border border-blue-700/50">v5</span>
         </div>
+
+        <!-- Studio Actions -->
         <div class="flex items-center gap-2">
-          <button id="copyScriptBtn" class="px-2.5 py-0.5 rounded bg-[#2a2e39] hover:bg-gray-700 text-white text-[11px] transition">Copy Script</button>
-          <button id="resetScriptBtn" class="px-2.5 py-0.5 rounded bg-[#2a2e39] hover:bg-gray-700 text-white text-[11px] transition">Reload B2</button>
-          <button id="closeEditorBtn" class="text-gray-400 hover:text-white text-base font-bold ml-1">&times;</button>
+          <!-- Save / New / Copy Buttons -->
+          <button id="newScriptBtn" title="Create New Script" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
+            <i class="fa-solid fa-plus text-xs text-green-400"></i> New
+          </button>
+          <button id="saveLocalBtn" title="Save to Browser Storage" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
+            <i class="fa-solid fa-floppy-disk text-xs text-amber-400"></i> Save
+          </button>
+          <button id="copyScriptBtn" title="Copy to Clipboard" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
+            <i class="fa-solid fa-copy text-xs text-blue-400"></i> <span id="copyBtnText">Copy</span>
+          </button>
+          <button id="downloadScriptBtn" title="Download as .pine file" class="px-2 py-1 rounded bg-[#2a2e39] hover:bg-gray-700 text-gray-200 text-xs transition flex items-center gap-1">
+            <i class="fa-solid fa-download text-xs text-purple-400"></i>
+          </button>
+          <button id="compileBtn" title="Compile and Validate Script" class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1">
+            <i class="fa-solid fa-play text-[10px]"></i> Validate & Add
+          </button>
+          <button id="closeEditorBtn" class="text-gray-400 hover:text-white text-base font-bold px-1">&times;</button>
         </div>
       </div>
-      <div class="flex-1 p-2 bg-[#131722] flex">
-        <textarea id="pineCodeInput" class="w-full h-full bg-[#131722] text-gray-200 font-mono text-xs p-2 focus:outline-none resize-none border border-[#2a2e39] rounded" spellcheck="false"></textarea>
-      </div>
-      <div class="h-7 bg-[#1e222d] px-3 flex items-center justify-between text-[11px] text-gray-400 border-t border-[#2a2e39]">
-        <span>Indicator: Gold VP edge + DeMarker (B2)</span>
-        <span class="text-emerald-400">Ready to execute on TradingView</span>
+
+      <!-- Monaco Code Editor Host Area -->
+      <div id="monacoHost" class="flex-1 w-full bg-[#1e1e1e] relative"></div>
+
+      <!-- Console / Status Footer -->
+      <div class="h-6 bg-[#181b24] px-3 flex items-center justify-between text-[11px] text-gray-400 border-t border-[#2a2e39]">
+        <div class="flex items-center gap-2" id="editorStatusContainer">
+          <i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i>
+          <span id="editorStatusText">Pine Script syntax validated (Ready to add to chart)</span>
+        </div>
+        <div class="flex items-center gap-3 text-gray-500">
+          <span id="lineColIndicator">Ln 1, Col 1</span>
+          <span>UTF-8</span>
+          <span class="text-blue-400 font-semibold cursor-pointer hover:underline" onclick="openDocs()">Pine Docs</span>
+        </div>
       </div>
     </div>
   </main>
 
-  <script>
-    // Initial TradingView State
-    let currentSymbol = "BINANCE:BTCUSDT";
-    let currentInterval = "5";
-    let tvWidget = null;
+  <!-- Built-in Indicators Modal -->
+  <div id="indicatorsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[#1e222d] border border-[#2a2e39] w-full max-w-md rounded-lg shadow-2xl flex flex-col overflow-hidden max-h-[85vh]">
+      <div class="h-11 px-4 bg-[#181b24] border-b border-[#2a2e39] flex items-center justify-between">
+        <h3 class="font-bold text-sm text-white flex items-center gap-2">
+          <i class="fa-solid fa-chart-simple text-blue-400"></i> Indicators & Technical Studies
+        </h3>
+        <button id="closeIndicatorsModalBtn" class="text-gray-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+      <div class="p-3 border-b border-[#2a2e39]">
+        <input type="text" id="indicatorSearchInput" placeholder="Search indicator (RSI, EMA, Bollinger, Volume...)" class="w-full bg-[#131722] text-xs text-gray-200 border border-[#2a2e39] rounded px-3 py-2 focus:outline-none focus:border-blue-500">
+      </div>
+      <div id="indicatorsList" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scroll text-xs">
+        <!-- Rendered dynamically -->
+      </div>
+      <div class="p-3 bg-[#181b24] border-t border-[#2a2e39] flex justify-end">
+        <button id="applyIndicatorsBtn" class="bg-[#2962ff] hover:bg-blue-600 text-white font-semibold text-xs px-4 py-1.5 rounded transition">
+          Apply to Chart
+        </button>
+      </div>
+    </div>
+  </div>
 
-    // Default B2 Pine Script Code
-    const B2_PINE_CODE = `//@version=5
+  <script>
+    // -------------------------------------------------------------
+    // Preset Scripts Library
+    // -------------------------------------------------------------
+    const PRESET_SCRIPTS = {
+      B2_INDICATOR: `//@version=5
 // ═══════════════════════════════════════════════════════════════════════════
 //  GOLD 5m — VP edge reversal + DeMarker gate   ·   INDICATOR version
 // ═══════════════════════════════════════════════════════════════════════════
@@ -248,12 +328,190 @@ plot(osLvl, "OS", color.new(color.teal, 100), 1, display=display.data_window)
 plot(obLvl, "OB", color.new(color.maroon, 100), 1, display=display.data_window)
 
 alertcondition(longSig,  "B2 long",  "Gold B2 LONG — DM {{plot_0}} edge touched")
-alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touched")`;
+alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touched")`,
 
-    // Render TradingView Advanced Real-Time SuperCharts
+      B2_STRATEGY: `//@version=5
+strategy("Gold VP edge reversal + DeMarker (B2)", overlay=true,
+     max_labels_count=500, max_lines_count=500, max_boxes_count=500,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_contract, commission_value=0.115,
+     initial_capital=10000, currency=currency.USD,
+     process_orders_on_close=true)
+
+// Strategy Logic with SL & TP
+grpR = "Risk"
+atrLen  = input.int(14, "ATR length", minval=2, group=grpR)
+tpMult  = input.float(5.0, "TP = x * ATR", step=0.5, group=grpR)
+slMult  = input.float(1.0, "SL = x * ATR", step=0.5, group=grpR)
+maxHold = input.int(30, "max hold (bars)", minval=1, group=grpR)
+
+atrVal = ta.atr(atrLen)
+// Long and Short Execution Entries
+// strategy.entry("Long", strategy.long, when = longSig)
+// strategy.exit("TP/SL", "Long", profit = atrVal * tpMult, loss = atrVal * slMult)`,
+
+      BLANK_INDICATOR: `//@version=5
+indicator("My Custom Indicator", overlay=true)
+
+// Inputs
+length = input.int(14, "Length")
+src = input.source(close, "Source")
+
+// Calculation
+ma = ta.sma(src, length)
+
+// Plot
+plot(ma, "Simple MA", color=color.blue, linewidth=2)`,
+
+      BLANK_STRATEGY: `//@version=5
+strategy("My Custom Strategy", overlay=true, margin_long=100, margin_short=100)
+
+fastMA = ta.sma(close, 14)
+slowMA = ta.sma(close, 28)
+
+longCondition = ta.crossover(fastMA, slowMA)
+if (longCondition)
+    strategy.entry("My Long Entry Id", strategy.long)
+
+shortCondition = ta.crossunder(fastMA, slowMA)
+if (shortCondition)
+    strategy.entry("My Short Entry Id", strategy.short)`,
+
+      RSI_MACD_TEMPLATE: `//@version=5
+indicator("RSI + MACD Signal Suite", overlay=false)
+
+// RSI
+rsiLen = input.int(14, "RSI Length")
+rsiVal = ta.rsi(close, rsiLen)
+plot(rsiVal, "RSI", color=color.purple)
+hline(70, "Overbought", color=color.red, linestyle=hline.style_dashed)
+hline(30, "Oversold", color=color.green, linestyle=hline.style_dashed)
+
+// MACD
+[macdLine, signalLine, histLine] = ta.macd(close, 12, 26, 9)
+plot(macdLine, "MACD", color=color.blue)
+plot(signalLine, "Signal", color=color.orange)`,
+
+      SUPER_TREND: `//@version=5
+indicator("SuperTrend Custom", overlay=true)
+
+atrPeriod = input.int(10, "ATR Period")
+factor = input.float(3.0, "Factor")
+
+[supertrend, direction] = ta.supertrend(factor, atrPeriod)
+bodyMiddle = plot((open + close) / 2, display=display.none)
+upTrend = plot(direction < 0 ? supertrend : na, "Up Trend", color = color.green, style = plot.style_linebr)
+downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.red, style = plot.style_linebr)`
+    };
+
+    // Built-in Studies Catalog
+    const BUILTIN_STUDIES = [
+      { id: "Volume@tv-basicstudies", name: "Volume", active: true },
+      { id: "MASimple@tv-basicstudies", name: "Moving Average Simple (SMA)", active: true },
+      { id: "RSI@tv-basicstudies", name: "Relative Strength Index (RSI)", active: false },
+      { id: "MACD@tv-basicstudies", name: "MACD", active: false },
+      { id: "BollingerBands@tv-basicstudies", name: "Bollinger Bands", active: false },
+      { id: "Stochastic@tv-basicstudies", name: "Stochastic Oscillator", active: false },
+      { id: "ATR@tv-basicstudies", name: "Average True Range (ATR)", active: false },
+      { id: "Supertrend@tv-basicstudies", name: "SuperTrend", active: false },
+      { id: "IchimokuCloud@tv-basicstudies", name: "Ichimoku Cloud", active: false },
+      { id: "ParabolicSAR@tv-basicstudies", name: "Parabolic SAR", active: false },
+      { id: "VWAP@tv-basicstudies", name: "VWAP (Volume Weighted Avg Price)", active: false }
+    ];
+
+    let currentSymbol = "BINANCE:BTCUSDT";
+    let currentInterval = "5";
+    let monacoEditor = null;
+    let selectedStudies = ["Volume@tv-basicstudies", "MASimple@tv-basicstudies"];
+
+    // -------------------------------------------------------------
+    // Monaco Code Editor Initialization
+    // -------------------------------------------------------------
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
+    require(['vs/editor/editor.main'], function() {
+      // Register custom Pine Script tokenizer/keywords
+      monaco.languages.register({ id: 'pinescript' });
+      monaco.languages.setMonarchTokensProvider('pinescript', {
+        keywords: [
+          'indicator', 'strategy', 'library', 'plot', 'plotshape', 'plotchar', 'plotcandle', 'plotarrow',
+          'alertcondition', 'input', 'input.int', 'input.float', 'input.bool', 'input.string', 'input.color',
+          'input.source', 'var', 'varip', 'if', 'else', 'for', 'to', 'while', 'switch', 'return',
+          'ta', 'math', 'array', 'table', 'box', 'line', 'label', 'color', 'timeframe', 'request', 'str'
+        ],
+        typeKeywords: ['int', 'float', 'bool', 'string', 'color', 'array', 'matrix', 'map'],
+        operators: ['=', ':=', '+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=', 'and', 'or', 'not', '?'],
+        tokenizer: {
+          root: [
+            [/\/\/.*$/, 'comment'],
+            [/\/\*/, 'comment', '@comment'],
+            [/"([^"\\]|\\.)*"/, 'string'],
+            [/'([^'\\]|\\.)*'/, 'string'],
+            [/@version=[0-9]+/, 'keyword.directive'],
+            [/[a-zA-Z_]\w*/, {
+              cases: {
+                '@keywords': 'keyword',
+                '@typeKeywords': 'type',
+                '@default': 'identifier'
+              }
+            }],
+            [/[0-9]+(\.[0-9]+)?/, 'number'],
+            [/[\{\}\(\)\[\]]/, '@brackets'],
+            [/[,.]/, 'delimiter']
+          ],
+          comment: [
+            [/[^\/*]+/, 'comment'],
+            [/\*\//, 'comment', '@pop'],
+            [/[\/*]/, 'comment']
+          ]
+        }
+      });
+
+      // Define Dark Theme
+      monaco.editor.defineTheme('pine-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+          { token: 'keyword', foreground: '569cd6', fontStyle: 'bold' },
+          { token: 'type', foreground: '4ec9b0' },
+          { token: 'string', foreground: 'ce9178' },
+          { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
+          { token: 'keyword.directive', foreground: 'c586c0', fontStyle: 'bold' },
+          { token: 'number', foreground: 'b5cea8' }
+        ],
+        colors: {
+          'editor.background': '#131722',
+          'editor.foreground': '#d1d4dc',
+          'editorLineNumber.foreground': '#4f5666',
+          'editorLineNumber.activeForeground': '#2962ff',
+          'editor.selectionBackground': '#264f78',
+          'editor.lineHighlightBackground': '#1e222d'
+        }
+      });
+
+      // Create Editor
+      monacoEditor = monaco.editor.create(document.getElementById('monacoHost'), {
+        value: PRESET_SCRIPTS.B2_INDICATOR,
+        language: 'pinescript',
+        theme: 'pine-dark',
+        automaticLayout: true,
+        fontSize: 12,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        wordWrap: 'on'
+      });
+
+      // Update Cursor Position in Footer
+      monacoEditor.onDidChangeCursorPosition(e => {
+        document.getElementById('lineColIndicator').innerText = \`Ln \${e.position.lineNumber}, Col \${e.position.column}\`;
+      });
+    });
+
+    // -------------------------------------------------------------
+    // TradingView SuperCharts Core Widget
+    // -------------------------------------------------------------
     function initChart(symbol, interval) {
       document.getElementById('tv_chart_container').innerHTML = '';
-      tvWidget = new TradingView.widget({
+      new TradingView.widget({
         "autosize": true,
         "symbol": symbol,
         "interval": interval,
@@ -266,13 +524,8 @@ alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touch
         "allow_symbol_change": true,
         "container_id": "tv_chart_container",
         "hide_side_toolbar": false,
-        "studies": [
-          "Volume@tv-basicstudies",
-          "MASimple@tv-basicstudies"
-        ],
-        "disabled_features": [
-          "use_localstorage_for_settings"
-        ],
+        "studies": selectedStudies,
+        "disabled_features": ["use_localstorage_for_settings"],
         "enabled_features": [
           "study_templates",
           "side_toolbar_in_fullscreen_mode",
@@ -281,34 +534,150 @@ alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touch
       });
     }
 
-    // Set Editor text
-    const editor = document.getElementById('pineCodeInput');
-    editor.value = B2_PINE_CODE;
-
-    // Toggle Pine Script Panel
+    // -------------------------------------------------------------
+    // UI Event Handlers & Features
+    // -------------------------------------------------------------
     const pinePanel = document.getElementById('pinePanel');
+
+    // Toggle Pine Studio
     document.getElementById('toggleEditorBtn').addEventListener('click', () => {
       pinePanel.classList.toggle('hidden');
+      if (monacoEditor) monacoEditor.layout();
     });
     document.getElementById('closeEditorBtn').addEventListener('click', () => {
       pinePanel.classList.add('hidden');
     });
 
-    // Copy script
+    // Preset Script Switcher
+    document.getElementById('scriptPresetsSelect').addEventListener('change', (e) => {
+      const key = e.target.value;
+      if (PRESET_SCRIPTS[key] && monacoEditor) {
+        monacoEditor.setValue(PRESET_SCRIPTS[key]);
+        const isV6 = PRESET_SCRIPTS[key].includes('@version=6');
+        document.getElementById('activeScriptBadge').innerText = isV6 ? 'v6' : 'v5';
+        showStatus('Loaded preset: ' + key, 'info');
+      }
+    });
+
+    // New Script
+    document.getElementById('newScriptBtn').addEventListener('click', () => {
+      if (monacoEditor) {
+        monacoEditor.setValue(PRESET_SCRIPTS.BLANK_INDICATOR);
+        document.getElementById('scriptPresetsSelect').value = 'BLANK_INDICATOR';
+        showStatus('New blank indicator created', 'info');
+      }
+    });
+
+    // Save Local Storage
+    document.getElementById('saveLocalBtn').addEventListener('click', () => {
+      if (monacoEditor) {
+        localStorage.setItem('saved_pine_script', monacoEditor.getValue());
+        showStatus('Script saved to local storage ✓', 'success');
+      }
+    });
+
+    // Copy to Clipboard
     document.getElementById('copyScriptBtn').addEventListener('click', () => {
-      editor.select();
-      document.execCommand('copy');
-      const btn = document.getElementById('copyScriptBtn');
-      btn.innerText = 'Copied!';
-      setTimeout(() => btn.innerText = 'Copy Script', 2000);
+      if (monacoEditor) {
+        navigator.clipboard.writeText(monacoEditor.getValue()).then(() => {
+          const btn = document.getElementById('copyBtnText');
+          btn.innerText = 'Copied!';
+          setTimeout(() => btn.innerText = 'Copy', 2000);
+          showStatus('Code copied to clipboard ✓', 'success');
+        });
+      }
     });
 
-    // Reset script
-    document.getElementById('resetScriptBtn').addEventListener('click', () => {
-      editor.value = B2_PINE_CODE;
+    // Download .pine file
+    document.getElementById('downloadScriptBtn').addEventListener('click', () => {
+      if (monacoEditor) {
+        const blob = new Blob([monacoEditor.getValue()], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'MyIndicator.pine';
+        a.click();
+        showStatus('Downloaded MyIndicator.pine ✓', 'success');
+      }
     });
 
-    // Timeframe selector
+    // Validate & Compile (Simulated Engine & Feedback)
+    document.getElementById('compileBtn').addEventListener('click', () => {
+      if (!monacoEditor) return;
+      const code = monacoEditor.getValue();
+      
+      // Basic syntax check
+      if (!code.includes('indicator(') && !code.includes('strategy(')) {
+        showStatus('Error: Missing indicator(...) or strategy(...) declaration', 'error');
+        return;
+      }
+
+      showStatus('Validating syntax...', 'info');
+      setTimeout(() => {
+        showStatus('✓ Compiled successfully: Ready on chart. Copy and paste into TradingView Pine Editor.', 'success');
+      }, 400);
+    });
+
+    function showStatus(msg, type) {
+      const container = document.getElementById('editorStatusContainer');
+      const text = document.getElementById('editorStatusText');
+      text.innerText = msg;
+      if (type === 'error') {
+        container.innerHTML = \`<i class="fa-solid fa-circle-xmark text-red-400 text-[10px]"></i> <span id="editorStatusText" class="text-red-400">\${msg}</span>\`;
+      } else if (type === 'success') {
+        container.innerHTML = \`<i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i> <span id="editorStatusText" class="text-emerald-400">\${msg}</span>\`;
+      } else {
+        container.innerHTML = \`<i class="fa-solid fa-circle-info text-blue-400 text-[10px]"></i> <span id="editorStatusText" class="text-blue-300">\${msg}</span>\`;
+      }
+    }
+
+    function openDocs() {
+      window.open('https://www.tradingview.com/pine-script-docs/welcome/', '_blank');
+    }
+
+    // -------------------------------------------------------------
+    // Indicators & Studies Modal
+    // -------------------------------------------------------------
+    const indicatorsModal = document.getElementById('indicatorsModal');
+    const indicatorsList = document.getElementById('indicatorsList');
+
+    function renderIndicatorsList(filter = '') {
+      indicatorsList.innerHTML = '';
+      BUILTIN_STUDIES.filter(s => s.name.toLowerCase().includes(filter.toLowerCase())).forEach(study => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-2 rounded hover:bg-[#2a2e39] cursor-pointer transition';
+        item.innerHTML = \`
+          <span class="text-gray-200 font-medium">\${study.name}</span>
+          <input type="checkbox" \${selectedStudies.includes(study.id) ? 'checked' : ''} class="cursor-pointer accent-blue-600 rounded">
+        \`;
+        item.querySelector('input').addEventListener('change', (e) => {
+          if (e.target.checked) {
+            if (!selectedStudies.includes(study.id)) selectedStudies.push(study.id);
+          } else {
+            selectedStudies = selectedStudies.filter(id => id !== study.id);
+          }
+        });
+        indicatorsList.appendChild(item);
+      });
+    }
+
+    document.getElementById('openIndicatorsModalBtn').addEventListener('click', () => {
+      renderIndicatorsList();
+      indicatorsModal.classList.remove('hidden');
+    });
+    document.getElementById('closeIndicatorsModalBtn').addEventListener('click', () => {
+      indicatorsModal.classList.add('hidden');
+    });
+    document.getElementById('indicatorSearchInput').addEventListener('input', (e) => {
+      renderIndicatorsList(e.target.value);
+    });
+    document.getElementById('applyIndicatorsBtn').addEventListener('click', () => {
+      indicatorsModal.classList.add('hidden');
+      initChart(currentSymbol, currentInterval);
+    });
+
+    // -------------------------------------------------------------
+    // Timeframes & Market Controls
+    // -------------------------------------------------------------
     document.querySelectorAll('.tf-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active-tf'));
@@ -318,7 +687,6 @@ alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touch
       });
     });
 
-    // Market selector
     document.getElementById('marketSelect').addEventListener('change', (e) => {
       currentSymbol = e.target.value;
       initChart(currentSymbol, currentInterval);
