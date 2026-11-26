@@ -533,22 +533,6 @@ downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.re
     } catch (err) {
       console.warn("Monaco loader fallback", err);
     }
-        "style": "1",
-        "locale": "en",
-        "toolbar_bg": "#1e222d",
-        "enable_publishing": false,
-        "allow_symbol_change": true,
-        "container_id": "tv_chart_container",
-        "hide_side_toolbar": false,
-        "studies": selectedStudies,
-        "disabled_features": ["use_localstorage_for_settings"],
-        "enabled_features": [
-          "study_templates",
-          "side_toolbar_in_fullscreen_mode",
-          "header_in_fullscreen_mode"
-        ]
-      });
-    }
 
     // -------------------------------------------------------------
     // UI Event Handlers & Features
