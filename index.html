@@ -452,87 +452,42 @@ downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.re
       });
     }
 
-    // -------------------------------------------------------------
+    function createEditorIfReady() {
+      if (typeof monaco !== 'undefined') {
+        try {
+          monaco.languages.register({ id: 'pinescript' });
+          monacoEditor = monaco.editor.create(document.getElementById('monacoHost'), {
+            value: PRESET_SCRIPTS.B2_INDICATOR,
+            language: 'pinescript',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            fontSize: 12,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            wordWrap: 'on'
+          });
+          monacoEditor.onDidChangeCursorPosition(e => {
+            document.getElementById('lineColIndicator').innerText = "Ln " + e.position.lineNumber + ", Col " + e.position.column;
+          });
+          return true;
+        } catch(e) { console.warn(e); }
+      }
+      return false;
+    }
+
     // Monaco Code Editor Initialization
-    // -------------------------------------------------------------
     try {
       require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
       require(['vs/editor/editor.main'], function() {
-        monaco.languages.register({ id: 'pinescript' });
-        monaco.languages.setMonarchTokensProvider('pinescript', {
-          keywords: [
-            'indicator', 'strategy', 'library', 'plot', 'plotshape', 'plotchar', 'plotcandle', 'plotarrow',
-            'alertcondition', 'input', 'input.int', 'input.float', 'input.bool', 'input.string', 'input.color',
-            'input.source', 'var', 'varip', 'if', 'else', 'for', 'to', 'while', 'switch', 'return',
-            'ta', 'math', 'array', 'table', 'box', 'line', 'label', 'color', 'timeframe', 'request', 'str'
-          ],
-          typeKeywords: ['int', 'float', 'bool', 'string', 'color', 'array', 'matrix', 'map'],
-          operators: ['=', ':=', '+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=', 'and', 'or', 'not', '?'],
-          tokenizer: {
-            root: [
-              [/\/\/.*$/, 'comment'],
-              [/\/\*/, 'comment', '@comment'],
-              [/"([^"\\]|\\.)*"/, 'string'],
-              [/'([^'\\]|\\.)*'/, 'string'],
-              [/@version=[0-9]+/, 'keyword.directive'],
-              [/[a-zA-Z_]\w*/, {
-                cases: {
-                  '@keywords': 'keyword',
-                  '@typeKeywords': 'type',
-                  '@default': 'identifier'
-                }
-              }],
-              [/[0-9]+(\.[0-9]+)?/, 'number'],
-              [/[\{\}\(\)\[\]]/, '@brackets'],
-              [/[,.]/, 'delimiter']
-            ],
-            comment: [
-              [/[^\/*]+/, 'comment'],
-              [/\*\//, 'comment', '@pop'],
-              [/[\/*]/, 'comment']
-            ]
-          }
-        });
-
-        monaco.editor.defineTheme('pine-dark', {
-          base: 'vs-dark',
-          inherit: true,
-          rules: [
-            { token: 'keyword', foreground: '569cd6', fontStyle: 'bold' },
-            { token: 'type', foreground: '4ec9b0' },
-            { token: 'string', foreground: 'ce9178' },
-            { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
-            { token: 'keyword.directive', foreground: 'c586c0', fontStyle: 'bold' },
-            { token: 'number', foreground: 'b5cea8' }
-          ],
-          colors: {
-            'editor.background': '#131722',
-            'editor.foreground': '#d1d4dc',
-            'editorLineNumber.foreground': '#4f5666',
-            'editorLineNumber.activeForeground': '#2962ff',
-            'editor.selectionBackground': '#264f78',
-            'editor.lineHighlightBackground': '#1e222d'
-          }
-        });
-
-        monacoEditor = monaco.editor.create(document.getElementById('monacoHost'), {
-          value: PRESET_SCRIPTS.B2_INDICATOR,
-          language: 'pinescript',
-          theme: 'pine-dark',
-          automaticLayout: true,
-          fontSize: 12,
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          wordWrap: 'on'
-        });
-
-        monacoEditor.onDidChangeCursorPosition(e => {
-          document.getElementById('lineColIndicator').innerText = "Ln " + e.position.lineNumber + ", Col " + e.position.column;
-        });
+        createEditorIfReady();
       });
     } catch (err) {
       console.warn("Monaco loader fallback", err);
     }
+    // Fallback polling for monaco
+    let monacoPoll = setInterval(() => {
+      if (createEditorIfReady()) clearInterval(monacoPoll);
+    }, 500);
 
     // -------------------------------------------------------------
     // UI Event Handlers & Features
