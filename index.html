@@ -41,7 +41,10 @@
       border-radius: 3px;
     }
     #pinePanel {
-      height: 220px;
+      height: 240px;
+    }
+    #pinePanel.hidden {
+      display: none !important;
     }
   </style>
 </head>
@@ -102,7 +105,7 @@
     <div id="tv_chart_container" class="flex-1 w-full h-full relative"></div>
 
     <!-- Advanced Pine Script Studio (Collapsible Bottom Panel) -->
-    <div id="pinePanel" class="border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-200 shrink-0 z-30">
+    <div id="pinePanel" class="hidden border-t border-[#2a2e39] bg-[#1e222d] flex flex-col transition-all duration-200 shrink-0 z-30">
       
       <!-- Studio Header / Toolbar -->
       <div class="h-9 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
@@ -646,7 +649,9 @@ downTrend = plot(direction < 0 ? na : supertrend, "Down Trend", color = color.re
     });
 
     // Start
-    initChart(currentSymbol, currentInterval);
+    window.addEventListener('load', () => {
+      initChart(currentSymbol, currentInterval);
+    });
   </script>
 </body>
 </html>
