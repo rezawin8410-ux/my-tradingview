@@ -1,0 +1,162 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════════════
+//  GOLD 5m — VP edge reversal + DeMarker gate   ·   INDICATOR version
+//  Same logic as B2_strategy.pine but without backtest engine calls:
+//  plots the levels, marks signals, exposes alertconditions.
+//  Use this to WATCH; use the strategy version to MEASURE.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Gold VP edge + DeMarker (B2) — signals", overlay=true,
+     max_labels_count=500, max_lines_count=500)
+
+grpP = "Volume profile"
+winH1   = input.float(24.0, "profile 1 window (hours)", minval=1, group=grpP)
+winH2   = input.float(4.0,  "profile 2 window (hours)", minval=0, group=grpP)
+bins    = input.int(50,     "price bins", minval=10, maxval=200, group=grpP)
+vaPct   = input.float(70.0, "value area %", minval=50, maxval=95, group=grpP)
+refresh = input.int(15,     "recompute every N bars", minval=1, maxval=200, group=grpP)
+nearPct = input.float(0.25, "gate: distance to edge (%)", step=0.05, group=grpP)
+showVP  = input.bool(true,  "draw levels", group=grpP)
+show2   = input.bool(true,  "draw 4h levels too", group=grpP)
+
+grpD = "DeMarker"
+dmLen  = input.int(7, "DeMarker length", minval=2, group=grpD)
+sigLen = input.int(3, "signal EMA length", minval=1, group=grpD)
+osLvl  = input.float(0.20, "oversold", step=0.01, group=grpD)
+obLvl  = input.float(0.80, "overbought", step=0.01, group=grpD)
+
+// ───────────── DeMarker ─────────────
+f_demarker(int len) =>
+    float dmx = math.max(high - high[1], 0.0)
+    float dmn = math.max(low[1] - low, 0.0)
+    float sx  = ta.sma(dmx, len)
+    float sn  = ta.sma(dmn, len)
+    float den = sx + sn
+    den > 0 ? sx / den : 0.5
+
+dm  = f_demarker(dmLen)
+sig = ta.ema(dm, sigLen)
+
+// ───────────── profile engine ─────────────
+var array<float> vol1  = array.new_float(bins, 0.0)
+var array<float> vol2  = array.new_float(bins, 0.0)
+var array<bool>  used1 = array.new_bool(bins, false)
+var array<bool>  used2 = array.new_bool(bins, false)
+
+var float vah1 = na
+var float val1 = na
+var float poc1 = na
+var float vah2 = na
+var float val2 = na
+
+f_profile(int win, array<float> vArr, array<bool> uArr) =>
+    if win < 30 or bar_index < win + 1
+        [na, na, na]
+    else
+        float lo = na
+        float hi = na
+        for i = 1 to win
+            lo := na(lo) ? low[i] : math.min(lo, low[i])
+            hi := na(hi) ? high[i] : math.max(hi, high[i])
+        if na(lo) or na(hi) or hi <= lo
+            [na, na, na]
+        else
+            float bw = (hi - lo) / bins
+            array.fill(vArr, 0.0)
+            for i = 1 to win
+                int b0 = int(math.floor((low[i]  - lo) / bw))
+                int b1 = int(math.floor((high[i] - lo) / bw))
+                b0 := math.max(0, math.min(bins - 1, b0))
+                b1 := math.max(0, math.min(bins - 1, b1))
+                float v = nz(volume[i], 1.0) / (b1 - b0 + 1)
+                for k = b0 to b1
+                    array.set(vArr, k, array.get(vArr, k) + v)
+            float total = array.sum(vArr)
+            int pocIdx = 0
+            float maxV = -1.0
+            for k = 0 to bins - 1
+                float v = array.get(vArr, k)
+                if v > maxV
+                    maxV := v
+                    pocIdx := k
+            array.fill(uArr, false)
+            array.set(uArr, pocIdx, true)
+            float acc = array.get(vArr, pocIdx)
+            int vLo = pocIdx
+            int vHi = pocIdx
+            float target = total * vaPct / 100.0
+            int guard = 0
+            while acc < target and guard < bins
+                int bestIdx = -1
+                float bestV = -1.0
+                for k = 0 to bins - 1
+                    if not array.get(uArr, k)
+                        float v = array.get(vArr, k)
+                        if v > bestV
+                            bestV := v
+                            bestIdx := k
+                if bestIdx < 0
+                    break
+                array.set(uArr, bestIdx, true)
+                acc += bestV
+                vLo := math.min(vLo, bestIdx)
+                vHi := math.max(vHi, bestIdx)
+                guard += 1
+            [lo + vLo * bw, lo + (vHi + 1) * bw, lo + (pocIdx + 0.5) * bw]
+
+tfMin = timeframe.in_seconds() / 60.0
+w1 = int(math.round(winH1 * 60.0 / tfMin))
+w2 = int(math.round(winH2 * 60.0 / tfMin))
+
+if bar_index % refresh == 0
+    [a1, b1v, c1] = f_profile(w1, vol1, used1)
+    val1 := a1
+    vah1 := b1v
+    poc1 := c1
+    if w2 >= 30
+        [a2, b2v, c2] = f_profile(w2, vol2, used2)
+        val2 := a2
+        vah2 := b2v
+
+// ───────────── gate + signals ─────────────
+f_near(float lvl) =>
+    not na(lvl) and math.abs(close - lvl) / close < nearPct / 100.0
+
+bool nearEdge = show2 ? (f_near(val1) or f_near(vah1) or f_near(val2) or f_near(vah2)) : (f_near(val1) or f_near(vah1))
+bool longSig  = dm < osLvl and dm < sig and nearEdge
+bool shortSig = dm > obLvl and dm > sig and nearEdge
+
+plot(showVP ? vah1 : na, "VAH 24h", color.new(color.orange, 0), 2)
+plot(showVP ? val1 : na, "VAL 24h", color.new(color.blue, 0), 2)
+plot(showVP ? poc1 : na, "POC 24h", color.new(color.gray, 30), 1, style=plot.style_circles)
+plot(showVP and show2 ? vah2 : na, "VAH 4h", color.new(color.orange, 60), 1)
+plot(showVP and show2 ? val2 : na, "VAL 4h", color.new(color.blue, 60), 1)
+
+plotshape(longSig,  "long",  shape.triangleup,   location.belowbar,
+          color.new(color.teal, 0),   size=size.small, text="L")
+plotshape(shortSig, "short", shape.triangledown, location.abovebar,
+          color.new(color.maroon, 0), size=size.small, text="S")
+bgcolor(nearEdge ? color.new(color.yellow, 94) : na)
+
+// An indicator has exactly ONE pane. With overlay=true the price chart is the
+// pane, so DeMarker cannot be plotted separately here — send it to the Data
+// Window instead and show the numbers in a table.
+plot(dm,  "DeMarker", color.new(color.white, 0), display=display.data_window)
+plot(sig, "signal",   color.new(color.orange, 0), display=display.data_window)
+plot(osLvl, "OS", color.new(color.teal, 100), 1, display=display.data_window)
+plot(obLvl, "OB", color.new(color.maroon, 100), 1, display=display.data_window)
+
+if barstate.islast
+    var table st = table.new(position.top_right, 2, 5, border_width=1)
+    table.cell(st, 0, 0, "B2",                 text_size=size.tiny, text_color=color.white, bgcolor=color.new(color.black, 30))
+    table.cell(st, 1, 0, timeframe.period,     text_size=size.tiny, text_color=color.white, bgcolor=color.new(color.black, 30))
+    table.cell(st, 0, 1, "VAH",                text_size=size.tiny)
+    table.cell(st, 1, 1, str.tostring(vah1, format.mintick), text_size=size.tiny)
+    table.cell(st, 0, 2, "VAL",                text_size=size.tiny)
+    table.cell(st, 1, 2, str.tostring(val1, format.mintick), text_size=size.tiny)
+    table.cell(st, 0, 3, "DeMarker / sig",     text_size=size.tiny)
+    table.cell(st, 1, 3, str.tostring(dm, "#.###") + " / " + str.tostring(sig, "#.###"), text_size=size.tiny)
+    table.cell(st, 0, 4, "gate",               text_size=size.tiny)
+    table.cell(st, 1, 4, nearEdge ? "PASS" : "-", text_size=size.tiny, text_color=nearEdge ? color.teal : color.gray)
+
+alertcondition(longSig,  "B2 long",  "Gold B2 LONG — DM {{plot_0}} edge touched")
+alertcondition(shortSig, "B2 short", "Gold B2 SHORT — DM {{plot_0}} edge touched")
