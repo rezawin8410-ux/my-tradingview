@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pro Trading Chart — Custom Indicator Engine</title>
+  <title>Personal TradingView — Interactive Pro Chart</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     html, body {
       background-color: #131722;
       color: #d1d4dc;
@@ -25,11 +25,11 @@
 </head>
 <body class="flex flex-col h-screen select-none">
 
-  <!-- Top Header -->
-  <header class="h-11 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 gap-2 shrink-0 z-20">
-    <div class="flex items-center gap-2 overflow-x-auto custom-scroll">
-      <!-- Market Select -->
-      <div class="flex items-center gap-1.5 font-bold text-white text-xs bg-[#2a2e39] px-2.5 py-1 rounded">
+  <!-- Top Navigation Bar -->
+  <header class="h-11 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-2 sm:px-3 gap-2 shrink-0 z-20">
+    <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll">
+      <!-- Market Selector -->
+      <div class="flex items-center gap-1 font-bold text-white text-xs bg-[#2a2e39] px-2 py-1 rounded">
         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
         <select id="marketSelect" class="bg-transparent border-none text-white text-xs font-semibold focus:outline-none cursor-pointer">
           <option value="XAUUSDT" selected>GOLD (XAU/USDT)</option>
@@ -39,7 +39,7 @@
         </select>
       </div>
 
-      <!-- Timeframes: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1D -->
+      <!-- Timeframe Buttons -->
       <div id="tfGroup" class="flex items-center gap-1">
         <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="1m">1m</button>
         <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="3m">3m</button>
@@ -52,43 +52,48 @@
       </div>
     </div>
 
-    <div class="flex items-center gap-2">
-      <!-- Live Indicator Toggle -->
-      <div class="flex items-center gap-1 text-[11px] bg-[#131722] px-2 py-0.5 rounded border border-[#2a2e39]">
-        <label class="flex items-center gap-1 cursor-pointer">
-          <input type="checkbox" id="toggleB2Check" checked class="accent-blue-500 rounded">
-          <span class="text-blue-400 font-semibold">B2 Indicator</span>
-        </label>
-      </div>
-      <!-- Editor Toggle -->
+    <!-- Actions: Settings Modal & Pine Editor -->
+    <div class="flex items-center gap-1.5 shrink-0">
+      <!-- Reset View / Fit Button -->
+      <button id="resetViewBtn" title="Reset Chart Zoom & Pan" class="text-xs bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-2 py-1 rounded transition">
+        <i class="fa-solid fa-arrows-rotate text-blue-400"></i>
+      </button>
+
+      <!-- Indicator Settings Button -->
+      <button id="openSettingsBtn" class="flex items-center gap-1 text-[11px] font-semibold bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-2 py-1 rounded transition">
+        <i class="fa-solid fa-sliders text-amber-400"></i>
+        <span class="hidden sm:inline">Settings</span>
+      </button>
+
+      <!-- Pine Script Drawer Toggle -->
       <button id="toggleEditorBtn" class="flex items-center gap-1 text-[11px] font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-2.5 py-1 rounded transition shadow">
         <i class="fa-solid fa-code"></i>
-        <span>Pine Code</span>
+        <span>Pine</span>
       </button>
     </div>
   </header>
 
   <!-- Main Chart Canvas Area -->
-  <main class="flex-1 flex flex-col relative w-full h-full min-h-0 overflow-hidden">
+  <main class="flex-1 flex flex-col relative w-full h-full min-h-0 overflow-hidden cursor-crosshair">
     
     <!-- Top Price Chart Canvas -->
-    <div id="mainChartBox" class="flex-1 relative w-full h-full">
+    <div id="mainChartBox" class="flex-1 relative w-full h-full overflow-hidden">
       <canvas id="candleCanvas" class="absolute inset-0 w-full h-full"></canvas>
       
       <!-- Live HUD Status Overlay -->
-      <div class="absolute top-2 left-2 bg-[#1e222d]/90 backdrop-blur border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] font-mono pointer-events-none shadow-lg z-10 space-y-0.5">
+      <div class="absolute top-2 left-2 bg-[#1e222d]/85 backdrop-blur border border-[#2a2e39] rounded px-2.5 py-1.5 text-[11px] font-mono pointer-events-none shadow-lg z-10 space-y-0.5">
         <div class="font-bold text-white flex items-center justify-between gap-4 border-b border-[#2a2e39] pb-0.5">
           <span id="hudSymbol">XAUUSDT · 5m</span>
           <span id="hudPrice" class="text-emerald-400">2654.50</span>
         </div>
         <div class="flex items-center justify-between gap-4 text-amber-400">
-          <span>VAH (24h):</span> <span id="hudVAH">---</span>
+          <span>VAH:</span> <span id="hudVAH">---</span>
         </div>
         <div class="flex items-center justify-between gap-4 text-blue-400">
-          <span>VAL (24h):</span> <span id="hudVAL">---</span>
+          <span>VAL:</span> <span id="hudVAL">---</span>
         </div>
         <div class="flex items-center justify-between gap-4 text-gray-400">
-          <span>POC (24h):</span> <span id="hudPOC">---</span>
+          <span>POC:</span> <span id="hudPOC">---</span>
         </div>
         <div class="flex items-center justify-between gap-4">
           <span class="text-gray-300">DeMarker:</span> <span id="hudDM" class="text-white">---</span>
@@ -96,6 +101,11 @@
         <div class="flex items-center justify-between gap-4">
           <span class="text-gray-300">Gate:</span> <span id="hudGate" class="text-emerald-400 font-bold">---</span>
         </div>
+      </div>
+
+      <!-- Drag & Zoom Hint Overlay -->
+      <div class="absolute bottom-2 left-2 text-[10px] text-gray-500 font-mono pointer-events-none z-10 hidden sm:block">
+        Pan: Drag Chart | Zoom: Scroll / Pinch | Double Click: Reset
       </div>
     </div>
 
@@ -105,8 +115,55 @@
       <div class="absolute top-1 left-2 text-[10px] font-mono text-gray-400 pointer-events-none z-10 flex gap-3">
         <span class="text-blue-400 font-bold">DeMarker(7)</span>
         <span class="text-amber-400 font-bold">EMA(3) Signal</span>
-        <span class="text-red-400">OB 0.80</span>
-        <span class="text-emerald-400">OS 0.20</span>
+        <span class="text-red-400">OB <span id="oscOBText">0.80</span></span>
+        <span class="text-emerald-400">OS <span id="oscOSText">0.20</span></span>
+      </div>
+    </div>
+
+    <!-- Indicator Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+      <div class="bg-[#1e222d] border border-[#2a2e39] w-full max-w-sm rounded-lg shadow-2xl overflow-hidden text-xs">
+        <div class="h-10 px-4 bg-[#181b24] border-b border-[#2a2e39] flex items-center justify-between font-bold text-white">
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-sliders text-amber-400"></i> B2 Indicator Settings</span>
+          <button id="closeSettingsBtn" class="text-gray-400 hover:text-white text-base">&times;</button>
+        </div>
+        <div class="p-4 space-y-3">
+          <div>
+            <label class="block text-gray-400 mb-1">DeMarker Length (Bars)</label>
+            <input type="text" inputmode="numeric" id="cfgDmLen" value="7" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
+          </div>
+          <div>
+            <label class="block text-gray-400 mb-1">Signal EMA Length</label>
+            <input type="text" inputmode="numeric" id="cfgSigLen" value="3" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-gray-400 mb-1">Overbought (OB)</label>
+              <input type="text" inputmode="decimal" id="cfgObLvl" value="0.80" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
+            </div>
+            <div>
+              <label class="block text-gray-400 mb-1">Oversold (OS)</label>
+              <input type="text" inputmode="decimal" id="cfgOsLvl" value="0.20" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
+            </div>
+          </div>
+          <div>
+            <label class="block text-gray-400 mb-1">Value Area % (Volume Profile)</label>
+            <input type="text" inputmode="decimal" id="cfgVaPct" value="70" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
+          </div>
+          <div>
+            <label class="block text-gray-400 mb-1">Gate Distance to Edge (%)</label>
+            <input type="text" inputmode="decimal" id="cfgNearPct" value="0.25" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
+          </div>
+          <div class="flex items-center gap-2 pt-2 border-t border-[#2a2e39]">
+            <input type="checkbox" id="cfgShowB2" checked class="accent-blue-500 rounded cursor-pointer">
+            <label for="cfgShowB2" class="text-white cursor-pointer font-semibold">Show VAH / VAL / Signals</label>
+          </div>
+        </div>
+        <div class="p-3 bg-[#181b24] border-t border-[#2a2e39] flex justify-end gap-2">
+          <button id="saveSettingsBtn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded font-semibold transition">
+            Apply Settings
+          </button>
+        </div>
       </div>
     </div>
 
@@ -119,7 +176,7 @@
         </div>
         <div class="flex items-center gap-2">
           <button id="applyPineBtn" class="px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition">
-            <i class="fa-solid fa-play text-[9px] mr-1"></i> Apply Indicator
+            Apply Indicator
           </button>
           <button id="copyPineBtn" class="px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-gray-700 text-white text-[11px] transition">
             Copy
@@ -133,37 +190,55 @@
 
   <script>
     // -------------------------------------------------------------
-    // App State & Data
+    // App State, Indicators Configuration & Controls
     // -------------------------------------------------------------
     let currentSymbol = 'XAUUSDT';
     let currentTf = '5m';
-    let showB2 = true;
     let candles = [];
     let b2Data = null;
+
+    // Configurable Parameters
+    let config = {
+      showB2: true,
+      dmLen: 7,
+      sigLen: 3,
+      obLvl: 0.80,
+      osLvl: 0.20,
+      vaPct: 70.0,
+      nearPct: 0.25,
+      bins: 40
+    };
+
+    // Pan & Zoom Interaction State
+    let visibleCount = 60; // How many candles are visible
+    let offsetIndex = 0;   // Pan scroll offset from right
+    let isDragging = false;
+    let dragStartX = 0;
+    let initialOffset = 0;
+    let crosshairPos = null;
 
     const candleCanvas = document.getElementById('candleCanvas');
     const oscCanvas = document.getElementById('oscillatorCanvas');
     const ctxCandle = candleCanvas.getContext('2d');
     const ctxOsc = oscCanvas.getContext('2d');
 
-    // Default B2 Pine Script Source
     const B2_SOURCE = `//@version=5
 indicator("Gold VP edge + DeMarker (B2) — signals", overlay=true)
 
-// Inputs
+// Configurable Settings via GUI
 dmLen  = input.int(7, "DeMarker length")
 sigLen = input.int(3, "signal EMA length")
 osLvl  = input.float(0.20, "oversold")
 obLvl  = input.float(0.80, "overbought")
+vaPct  = input.float(70.0, "value area %")
 nearPct = input.float(0.25, "gate: distance to edge (%)")
 
-// Calculations executed live on chart
-// VAH, VAL, POC, DeMarker(7), Signal EMA(3), Buy/Sell Signals`;
+// All calculations executed dynamically with interactive pan/zoom`;
 
     document.getElementById('pineText').value = B2_SOURCE;
 
     // -------------------------------------------------------------
-    // Data Engine: Generation + Realistic Price Dynamics
+    // Realistic Historical Candle Generator
     // -------------------------------------------------------------
     function getSeconds(tf) {
       if (tf === '1m') return 60;
@@ -179,44 +254,39 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
 
     function initCandles() {
       candles = [];
-      const count = 75;
+      const totalCandles = 250;
       const now = Math.floor(Date.now() / 1000);
       const step = getSeconds(currentTf);
       let basePrice = currentSymbol.includes('BTC') ? 60800 : (currentSymbol.includes('ETH') ? 2550 : (currentSymbol.includes('SOL') ? 145 : 2655));
       let p = basePrice;
 
-      for (let i = count; i >= 0; i--) {
+      for (let i = totalCandles; i >= 0; i--) {
         let t = now - (i * step);
         let delta = (Math.random() - 0.495) * (basePrice * 0.0035);
         let o = p;
         let c = p + delta;
         let h = Math.max(o, c) + Math.random() * (basePrice * 0.002);
         let l = Math.min(o, c) - Math.random() * (basePrice * 0.002);
-        let v = 15 + Math.random() * 80;
+        let v = 20 + Math.random() * 100;
         candles.push({ time: t, open: o, high: h, low: l, close: c, volume: v });
         p = c;
       }
+      offsetIndex = 0;
     }
 
     // -------------------------------------------------------------
-    // B2 Indicator Engine: Rolling Volume Profile + DeMarker
+    // B2 Indicator Engine: Dynamic Volume Profile + DeMarker
     // -------------------------------------------------------------
     function calculateB2() {
-      const dmLen = 7;
-      const sigLen = 3;
-      const bins = 40;
-      const vaPct = 70.0;
-      const nearPct = 0.25;
-
       let dm = [];
       let sig = [];
-      let signals = []; // { index, type: 'BUY' | 'SELL', price }
+      let signals = [];
 
-      // 1. DeMarker Calculation
+      // 1. DeMarker
       for (let i = 0; i < candles.length; i++) {
         if (i < 1) { dm.push(0.5); continue; }
         let dmxSum = 0, dmnSum = 0, cnt = 0;
-        for (let k = Math.max(1, i - dmLen + 1); k <= i; k++) {
+        for (let k = Math.max(1, i - config.dmLen + 1); k <= i; k++) {
           dmxSum += Math.max(candles[k].high - candles[k - 1].high, 0);
           dmnSum += Math.max(candles[k - 1].low - candles[k].low, 0);
           cnt++;
@@ -227,8 +297,8 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
         dm.push(val);
       }
 
-      // 2. EMA(3) of DeMarker
-      const alpha = 2 / (sigLen + 1);
+      // 2. EMA(3) Signal
+      const alpha = 2 / (config.sigLen + 1);
       let curEma = dm[0];
       for (let i = 0; i < dm.length; i++) {
         if (i === 0) sig.push(curEma);
@@ -238,15 +308,17 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
         }
       }
 
-      // 3. Volume Profile (Value Area High / Low / POC)
-      let minP = Math.min(...candles.map(c => c.low));
-      let maxP = Math.max(...candles.map(c => c.high));
-      let bw = (maxP - minP) / bins;
-      let volBins = new Array(bins).fill(0);
+      // 3. Volume Profile (Value Area Calculation)
+      const lookback = Math.min(candles.length, 120);
+      const vpSlice = candles.slice(candles.length - lookback);
+      let minP = Math.min(...vpSlice.map(c => c.low));
+      let maxP = Math.max(...vpSlice.map(c => c.high));
+      let bw = (maxP - minP) / config.bins;
+      let volBins = new Array(config.bins).fill(0);
 
-      candles.forEach(c => {
-        let b0 = Math.max(0, Math.min(bins - 1, Math.floor((c.low - minP) / bw)));
-        let b1 = Math.max(0, Math.min(bins - 1, Math.floor((c.high - minP) / bw)));
+      vpSlice.forEach(c => {
+        let b0 = Math.max(0, Math.min(config.bins - 1, Math.floor((c.low - minP) / bw)));
+        let b1 = Math.max(0, Math.min(config.bins - 1, Math.floor((c.high - minP) / bw)));
         let vEach = c.volume / (b1 - b0 + 1);
         for (let b = b0; b <= b1; b++) volBins[b] += vEach;
       });
@@ -255,16 +327,16 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
       let pocIdx = 0, maxV = -1;
       volBins.forEach((v, idx) => { if (v > maxV) { maxV = v; pocIdx = idx; } });
 
-      let used = new Array(bins).fill(false);
+      let used = new Array(config.bins).fill(false);
       used[pocIdx] = true;
       let accV = volBins[pocIdx];
       let vLo = pocIdx, vHi = pocIdx;
-      let targetV = totalV * (vaPct / 100);
+      let targetV = totalV * (config.vaPct / 100);
 
       let guard = 0;
-      while (accV < targetV && guard < bins) {
+      while (accV < targetV && guard < config.bins) {
         let bestIdx = -1, bestV = -1;
-        for (let k = 0; k < bins; k++) {
+        for (let k = 0; k < config.bins; k++) {
           if (!used[k] && volBins[k] > bestV) { bestV = volBins[k]; bestIdx = k; }
         }
         if (bestIdx < 0) break;
@@ -279,18 +351,15 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
       const val = minP + vLo * bw;
       const poc = minP + (pocIdx + 0.5) * bw;
 
-      // 4. Signal Detection (DeMarker cross + VP Edge touch)
+      // 4. Signals
       for (let i = 2; i < candles.length; i++) {
         const c = candles[i];
-        const near = (Math.abs(c.close - val) / c.close < nearPct / 100) ||
-                     (Math.abs(c.close - vah) / c.close < nearPct / 100);
+        const near = (Math.abs(c.close - val) / c.close < config.nearPct / 100) ||
+                     (Math.abs(c.close - vah) / c.close < config.nearPct / 100);
 
-        // Buy: DM oversold & crosses above signal near VAL
-        if (dm[i] < 0.28 && dm[i] > dm[i - 1] && near) {
+        if (dm[i] < config.osLvl + 0.05 && dm[i] > dm[i - 1] && near) {
           signals.push({ index: i, type: 'BUY', price: c.low });
-        }
-        // Sell: DM overbought & crosses below signal near VAH
-        else if (dm[i] > 0.72 && dm[i] < dm[i - 1] && near) {
+        } else if (dm[i] > config.obLvl - 0.05 && dm[i] < dm[i - 1] && near) {
           signals.push({ index: i, type: 'SELL', price: c.high });
         }
       }
@@ -299,7 +368,7 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
     }
 
     // -------------------------------------------------------------
-    // High-Performance HTML5 Canvas Rendering Engine
+    // Interactive Canvas Rendering with Pan & Zoom
     // -------------------------------------------------------------
     function resizeCanvases() {
       const dpr = window.devicePixelRatio || 1;
@@ -308,12 +377,14 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
       const hMain = document.getElementById('mainChartBox').clientHeight;
       candleCanvas.width = wMain * dpr;
       candleCanvas.height = hMain * dpr;
+      ctxCandle.setTransform(1, 0, 0, 1, 0, 0);
       ctxCandle.scale(dpr, dpr);
 
       const wOsc = document.getElementById('oscillatorBox').clientWidth;
       const hOsc = document.getElementById('oscillatorBox').clientHeight;
       oscCanvas.width = wOsc * dpr;
       oscCanvas.height = hOsc * dpr;
+      ctxOsc.setTransform(1, 0, 0, 1, 0, 0);
       ctxOsc.scale(dpr, dpr);
 
       render();
@@ -326,15 +397,20 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
 
       b2Data = calculateB2();
 
-      // Clear Main Canvas
+      // Viewport Slice of Visible Candles
+      const endIdx = candles.length - offsetIndex;
+      const startIdx = Math.max(0, endIdx - visibleCount);
+      const visibleCandles = candles.slice(startIdx, endIdx);
+
+      // Clear Canvas
       ctxCandle.clearRect(0, 0, w, h);
       ctxCandle.fillStyle = '#131722';
       ctxCandle.fillRect(0, 0, w, h);
 
-      // Price Scale calculation
-      let minPrice = Math.min(...candles.map(c => c.low));
-      let maxPrice = Math.max(...candles.map(c => c.high));
-      if (showB2) {
+      // Price Scaling
+      let minPrice = Math.min(...visibleCandles.map(c => c.low));
+      let maxPrice = Math.max(...visibleCandles.map(c => c.high));
+      if (config.showB2) {
         minPrice = Math.min(minPrice, b2Data.val * 0.999);
         maxPrice = Math.max(maxPrice, b2Data.vah * 1.001);
       }
@@ -343,8 +419,9 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
       maxPrice += pad;
 
       const priceToY = p => h - ((p - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15;
+      const yToPrice = y => minPrice + (1 - (y - 15) / (h - 30)) * (maxPrice - minPrice);
 
-      // Draw Grid & Price Scale
+      // Grid Lines & Price Labels
       ctxCandle.strokeStyle = '#1e222d';
       ctxCandle.lineWidth = 1;
       const steps = 6;
@@ -356,60 +433,43 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
         ctxCandle.lineTo(w - 55, y);
         ctxCandle.stroke();
 
-        // Right scale label
         ctxCandle.fillStyle = '#787b86';
         ctxCandle.font = '10px monospace';
         ctxCandle.fillText(p.toFixed(2), w - 50, y + 3);
       }
 
-      // Draw B2 Indicator Levels (VAH, VAL, POC) on Main Chart
-      if (showB2) {
-        // VAH (Orange line)
+      // Draw B2 Indicator Levels (VAH, VAL, POC)
+      if (config.showB2) {
+        // VAH
         const yVAH = priceToY(b2Data.vah);
         ctxCandle.strokeStyle = '#ff9800';
         ctxCandle.lineWidth = 1.5;
         ctxCandle.setLineDash([5, 3]);
-        ctxCandle.beginPath();
-        ctxCandle.moveTo(0, yVAH);
-        ctxCandle.lineTo(w - 55, yVAH);
-        ctxCandle.stroke();
-        ctxCandle.fillStyle = '#ff9800';
-        ctxCandle.fillRect(w - 52, yVAH - 8, 50, 15);
-        ctxCandle.fillStyle = '#000';
-        ctxCandle.fillText('VAH ' + b2Data.vah.toFixed(1), w - 50, yVAH + 3);
+        ctxCandle.beginPath(); ctxCandle.moveTo(0, yVAH); ctxCandle.lineTo(w - 55, yVAH); ctxCandle.stroke();
+        ctxCandle.fillStyle = '#ff9800'; ctxCandle.fillRect(w - 52, yVAH - 8, 50, 15);
+        ctxCandle.fillStyle = '#000'; ctxCandle.fillText('VAH ' + b2Data.vah.toFixed(1), w - 50, yVAH + 3);
 
-        // VAL (Blue line)
+        // VAL
         const yVAL = priceToY(b2Data.val);
         ctxCandle.strokeStyle = '#2196f3';
-        ctxCandle.lineWidth = 1.5;
-        ctxCandle.setLineDash([5, 3]);
-        ctxCandle.beginPath();
-        ctxCandle.moveTo(0, yVAL);
-        ctxCandle.lineTo(w - 55, yVAL);
-        ctxCandle.stroke();
-        ctxCandle.fillStyle = '#2196f3';
-        ctxCandle.fillRect(w - 52, yVAL - 8, 50, 15);
-        ctxCandle.fillStyle = '#fff';
-        ctxCandle.fillText('VAL ' + b2Data.val.toFixed(1), w - 50, yVAL + 3);
+        ctxCandle.beginPath(); ctxCandle.moveTo(0, yVAL); ctxCandle.lineTo(w - 55, yVAL); ctxCandle.stroke();
+        ctxCandle.fillStyle = '#2196f3'; ctxCandle.fillRect(w - 52, yVAL - 8, 50, 15);
+        ctxCandle.fillStyle = '#fff'; ctxCandle.fillText('VAL ' + b2Data.val.toFixed(1), w - 50, yVAL + 3);
 
-        // POC (Dotted gray)
+        // POC
         const yPOC = priceToY(b2Data.poc);
         ctxCandle.strokeStyle = '#9e9e9e';
-        ctxCandle.lineWidth = 1;
         ctxCandle.setLineDash([2, 2]);
-        ctxCandle.beginPath();
-        ctxCandle.moveTo(0, yPOC);
-        ctxCandle.lineTo(w - 55, yPOC);
-        ctxCandle.stroke();
+        ctxCandle.beginPath(); ctxCandle.moveTo(0, yPOC); ctxCandle.lineTo(w - 55, yPOC); ctxCandle.stroke();
         ctxCandle.setLineDash([]);
       }
 
       // Draw Candlesticks
       const chartWidth = w - 60;
-      const candleW = Math.max(3, chartWidth / candles.length - 2);
+      const candleW = Math.max(3, (chartWidth / visibleCount) - 2);
 
-      candles.forEach((c, i) => {
-        const x = (i * (chartWidth / candles.length)) + 5;
+      visibleCandles.forEach((c, idx) => {
+        const x = (idx * (chartWidth / visibleCount)) + 5;
         const yOpen = priceToY(c.open);
         const yClose = priceToY(c.close);
         const yHigh = priceToY(c.high);
@@ -419,46 +479,64 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
         ctxCandle.strokeStyle = isUp ? '#089981' : '#f23645';
         ctxCandle.fillStyle = isUp ? '#089981' : '#f23645';
 
-        // Upper & Lower Wicks
+        // Wicks
         ctxCandle.beginPath();
         ctxCandle.moveTo(x + candleW / 2, yHigh);
         ctxCandle.lineTo(x + candleW / 2, yLow);
         ctxCandle.stroke();
 
-        // Candle Body
+        // Body
         const topY = Math.min(yOpen, yClose);
         const bodyH = Math.max(2, Math.abs(yClose - yOpen));
         ctxCandle.fillRect(x, topY, candleW, bodyH);
       });
 
-      // Draw Buy / Sell Signals (B2 Indicator Labels on Bars)
-      if (showB2 && b2Data.signals.length > 0) {
+      // Draw Signals for visible candles
+      if (config.showB2 && b2Data.signals.length > 0) {
         b2Data.signals.forEach(sig => {
-          const x = (sig.index * (chartWidth / candles.length)) + 5 + (candleW / 2);
-          if (sig.type === 'BUY') {
-            const y = priceToY(sig.price) + 18;
-            ctxCandle.fillStyle = '#089981';
-            // Triangle Up
-            ctxCandle.beginPath();
-            ctxCandle.moveTo(x, y - 8);
-            ctxCandle.lineTo(x - 5, y);
-            ctxCandle.lineTo(x + 5, y);
-            ctxCandle.fill();
-            ctxCandle.font = 'bold 9px sans-serif';
-            ctxCandle.fillText('L', x - 3, y + 10);
-          } else {
-            const y = priceToY(sig.price) - 18;
-            ctxCandle.fillStyle = '#f23645';
-            // Triangle Down
-            ctxCandle.beginPath();
-            ctxCandle.moveTo(x, y + 8);
-            ctxCandle.lineTo(x - 5, y);
-            ctxCandle.lineTo(x + 5, y);
-            ctxCandle.fill();
-            ctxCandle.font = 'bold 9px sans-serif';
-            ctxCandle.fillText('S', x - 3, y - 4);
+          if (sig.index >= startIdx && sig.index < endIdx) {
+            const idx = sig.index - startIdx;
+            const x = (idx * (chartWidth / visibleCount)) + 5 + (candleW / 2);
+            if (sig.type === 'BUY') {
+              const y = priceToY(sig.price) + 16;
+              ctxCandle.fillStyle = '#089981';
+              ctxCandle.beginPath();
+              ctxCandle.moveTo(x, y - 7); ctxCandle.lineTo(x - 5, y); ctxCandle.lineTo(x + 5, y);
+              ctxCandle.fill();
+              ctxCandle.font = 'bold 9px sans-serif';
+              ctxCandle.fillText('L', x - 3, y + 10);
+            } else {
+              const y = priceToY(sig.price) - 16;
+              ctxCandle.fillStyle = '#f23645';
+              ctxCandle.beginPath();
+              ctxCandle.moveTo(x, y + 7); ctxCandle.lineTo(x - 5, y); ctxCandle.lineTo(x + 5, y);
+              ctxCandle.fill();
+              ctxCandle.font = 'bold 9px sans-serif';
+              ctxCandle.fillText('S', x - 3, y - 4);
+            }
           }
         });
+      }
+
+      // Draw Crosshair
+      if (crosshairPos && crosshairPos.x < chartWidth && crosshairPos.y < h) {
+        ctxCandle.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        ctxCandle.lineWidth = 1;
+        ctxCandle.setLineDash([4, 4]);
+
+        // Vert
+        ctxCandle.beginPath(); ctxCandle.moveTo(crosshairPos.x, 0); ctxCandle.lineTo(crosshairPos.x, h); ctxCandle.stroke();
+        // Horz
+        ctxCandle.beginPath(); ctxCandle.moveTo(0, crosshairPos.y); ctxCandle.lineTo(w - 55, crosshairPos.y); ctxCandle.stroke();
+        ctxCandle.setLineDash([]);
+
+        // Hover Price Badge
+        const hoveredPrice = yToPrice(crosshairPos.y);
+        ctxCandle.fillStyle = '#2962ff';
+        ctxCandle.fillRect(w - 53, crosshairPos.y - 8, 52, 16);
+        ctxCandle.fillStyle = '#fff';
+        ctxCandle.font = '10px monospace';
+        ctxCandle.fillText(hoveredPrice.toFixed(2), w - 50, crosshairPos.y + 4);
       }
 
       // -----------------------------------------------------------
@@ -473,44 +551,46 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
 
       const oscToY = val => hO - (val * (hO - 24)) - 12;
 
-      // Overbought 0.80 & Oversold 0.20 threshold levels
-      const yOB = oscToY(0.80);
-      const yOS = oscToY(0.20);
-      ctxOsc.strokeStyle = 'rgba(242, 54, 69, 0.5)';
+      // OB & OS Levels
+      const yOB = oscToY(config.obLvl);
+      const yOS = oscToY(config.osLvl);
+      ctxOsc.strokeStyle = 'rgba(242, 54, 69, 0.4)';
       ctxOsc.setLineDash([4, 2]);
       ctxOsc.beginPath(); ctxOsc.moveTo(0, yOB); ctxOsc.lineTo(wO - 45, yOB); ctxOsc.stroke();
 
-      ctxOsc.strokeStyle = 'rgba(8, 153, 129, 0.5)';
+      ctxOsc.strokeStyle = 'rgba(8, 153, 129, 0.4)';
       ctxOsc.beginPath(); ctxOsc.moveTo(0, yOS); ctxOsc.lineTo(wO - 45, yOS); ctxOsc.stroke();
       ctxOsc.setLineDash([]);
 
-      // Plot Signal Line (EMA 3 - Orange)
+      // Signal EMA (Orange)
       ctxOsc.strokeStyle = '#ff9800';
       ctxOsc.lineWidth = 1.5;
       ctxOsc.beginPath();
-      b2Data.sig.forEach((val, i) => {
-        const x = (i * (chartWidth / candles.length)) + 5 + (candleW / 2);
-        const y = oscToY(val);
-        if (i === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
+      visibleCandles.forEach((c, idx) => {
+        const globalIdx = startIdx + idx;
+        const x = (idx * (chartWidth / visibleCount)) + 5 + (candleW / 2);
+        const y = oscToY(b2Data.sig[globalIdx]);
+        if (idx === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
       });
       ctxOsc.stroke();
 
-      // Plot DeMarker Line (DM 7 - Blue)
+      // DeMarker (Blue)
       ctxOsc.strokeStyle = '#2962ff';
       ctxOsc.lineWidth = 2;
       ctxOsc.beginPath();
-      b2Data.dm.forEach((val, i) => {
-        const x = (i * (chartWidth / candles.length)) + 5 + (candleW / 2);
-        const y = oscToY(val);
-        if (i === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
+      visibleCandles.forEach((c, idx) => {
+        const globalIdx = startIdx + idx;
+        const x = (idx * (chartWidth / visibleCount)) + 5 + (candleW / 2);
+        const y = oscToY(b2Data.dm[globalIdx]);
+        if (idx === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
       });
       ctxOsc.stroke();
 
-      // Update Live HUD Status
+      // Update Live HUD
       const last = candles[candles.length - 1];
       const lastDM = b2Data.dm[b2Data.dm.length - 1];
-      const isNear = (Math.abs(last.close - b2Data.val) / last.close < 0.0025) ||
-                     (Math.abs(last.close - b2Data.vah) / last.close < 0.0025);
+      const isNear = (Math.abs(last.close - b2Data.val) / last.close < config.nearPct / 100) ||
+                     (Math.abs(last.close - b2Data.vah) / last.close < config.nearPct / 100);
 
       document.getElementById('hudSymbol').innerText = `${currentSymbol} · ${currentTf}`;
       document.getElementById('hudPrice').innerText = last.close.toFixed(2);
@@ -524,11 +604,149 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
     }
 
     // -------------------------------------------------------------
-    // UI Interactions & Event Handlers
+    // Mouse, Touch & Interactive Pan & Zoom
     // -------------------------------------------------------------
-    window.addEventListener('resize', resizeCanvases);
+    const box = document.getElementById('mainChartBox');
 
-    // Timeframe selector
+    // Drag to Pan
+    box.addEventListener('mousedown', e => {
+      isDragging = true;
+      dragStartX = e.clientX;
+      initialOffset = offsetIndex;
+    });
+
+    window.addEventListener('mousemove', e => {
+      const rect = box.getBoundingClientRect();
+      crosshairPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+      if (isDragging) {
+        const dx = e.clientX - dragStartX;
+        const candlesShift = Math.round(dx / ((box.clientWidth - 60) / visibleCount));
+        offsetIndex = Math.max(0, Math.min(candles.length - visibleCount - 1, initialOffset - candlesShift));
+      }
+      render();
+    });
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    box.addEventListener('mouseleave', () => { crosshairPos = null; render(); });
+
+    // Touch Support for Mobile Drag & Pinch-to-zoom
+    let touchStartX = 0, initialPinchDist = 0;
+    box.addEventListener('touchstart', e => {
+      if (e.touches.length === 1) {
+        isDragging = true;
+        touchStartX = e.touches[0].clientX;
+        initialOffset = offsetIndex;
+        const rect = box.getBoundingClientRect();
+        crosshairPos = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+        render();
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      }
+    }, { passive: true });
+
+    box.addEventListener('touchmove', e => {
+      if (e.touches.length === 1 && isDragging) {
+        const dx = e.touches[0].clientX - touchStartX;
+        const candlesShift = Math.round(dx / ((box.clientWidth - 60) / visibleCount));
+        offsetIndex = Math.max(0, Math.min(candles.length - visibleCount - 1, initialOffset - candlesShift));
+        const rect = box.getBoundingClientRect();
+        crosshairPos = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+        render();
+      } else if (e.touches.length === 2 && initialPinchDist > 0) {
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        const factor = dist / initialPinchDist;
+        if (factor > 1.08) {
+          visibleCount = Math.max(20, visibleCount - 2);
+          initialPinchDist = dist;
+        } else if (factor < 0.92) {
+          visibleCount = Math.min(180, visibleCount + 2);
+          initialPinchDist = dist;
+        }
+        render();
+      }
+    }, { passive: true });
+    }, { passive: true });
+
+    box.addEventListener('touchend', () => { isDragging = false; initialPinchDist = 0; });
+
+    // Mouse Wheel Zoom
+    box.addEventListener('wheel', e => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        // Zoom in
+        visibleCount = Math.max(20, visibleCount - 4);
+      } else {
+        // Zoom out
+        visibleCount = Math.min(180, visibleCount + 4);
+      }
+      render();
+    }, { passive: false });
+
+    // Double Click to Reset View
+    box.addEventListener('dblclick', () => {
+      offsetIndex = 0;
+      visibleCount = 60;
+      render();
+    });
+
+    document.getElementById('resetViewBtn').addEventListener('click', () => {
+      offsetIndex = 0;
+      visibleCount = 60;
+      render();
+    });
+
+    // -------------------------------------------------------------
+    // UI Modal & Configuration Handling
+    // -------------------------------------------------------------
+    const settingsModal = document.getElementById('settingsModal');
+
+    document.getElementById('openSettingsBtn').addEventListener('click', () => {
+      document.getElementById('cfgDmLen').value = config.dmLen;
+      document.getElementById('cfgSigLen').value = config.sigLen;
+      document.getElementById('cfgObLvl').value = config.obLvl;
+      document.getElementById('cfgOsLvl').value = config.osLvl;
+      document.getElementById('cfgVaPct').value = config.vaPct;
+      document.getElementById('cfgNearPct').value = config.nearPct;
+      document.getElementById('cfgShowB2').checked = config.showB2;
+      settingsModal.classList.remove('hidden');
+    });
+
+    document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+      settingsModal.classList.add('hidden');
+    });
+
+    function parseLocaleNumber(val, defaultVal) {
+      if (typeof val !== 'string') return defaultVal;
+      // Convert Persian / Arabic digits to Latin
+      const faDigits = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
+      let clean = val;
+      faDigits.forEach((d, idx) => {
+        clean = clean.split(d).join(idx.toString());
+      });
+      clean = clean.replace(/٫/g, '.').replace(/,/g, '.');
+      const res = parseFloat(clean);
+      return isNaN(res) ? defaultVal : res;
+    }
+
+    document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+      config.dmLen = Math.round(parseLocaleNumber(document.getElementById('cfgDmLen').value, 7));
+      config.sigLen = Math.round(parseLocaleNumber(document.getElementById('cfgSigLen').value, 3));
+      config.obLvl = parseLocaleNumber(document.getElementById('cfgObLvl').value, 0.80);
+      config.osLvl = parseLocaleNumber(document.getElementById('cfgOsLvl').value, 0.20);
+      config.vaPct = parseLocaleNumber(document.getElementById('cfgVaPct').value, 70.0);
+      config.nearPct = parseLocaleNumber(document.getElementById('cfgNearPct').value, 0.25);
+      config.showB2 = document.getElementById('cfgShowB2').checked;
+
+      document.getElementById('oscOBText').innerText = config.obLvl.toFixed(2);
+      document.getElementById('oscOSText').innerText = config.osLvl.toFixed(2);
+
+      settingsModal.classList.add('hidden');
+      render();
+    });
+
+    // Timeframe Buttons
     document.querySelectorAll('#tfGroup .tf-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('#tfGroup .tf-btn').forEach(b => b.classList.remove('active-tf'));
@@ -539,20 +757,14 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
       });
     });
 
-    // Market selector
+    // Market Selector
     document.getElementById('marketSelect').addEventListener('change', e => {
       currentSymbol = e.target.value;
       initCandles();
       render();
     });
 
-    // Toggle B2 Checkbox
-    document.getElementById('toggleB2Check').addEventListener('change', e => {
-      showB2 = e.target.checked;
-      render();
-    });
-
-    // Toggle Pine Code Drawer
+    // Pine Drawer
     const drawer = document.getElementById('pineDrawer');
     document.getElementById('toggleEditorBtn').addEventListener('click', () => {
       drawer.classList.toggle('hidden');
@@ -562,17 +774,12 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
       drawer.classList.add('hidden');
       resizeCanvases();
     });
-
-    // Apply button
     document.getElementById('applyPineBtn').addEventListener('click', () => {
-      showB2 = true;
-      document.getElementById('toggleB2Check').checked = true;
+      config.showB2 = true;
       render();
       drawer.classList.add('hidden');
       resizeCanvases();
     });
-
-    // Copy Pine Code button
     document.getElementById('copyPineBtn').addEventListener('click', () => {
       const txt = document.getElementById('pineText');
       txt.select();
@@ -582,12 +789,20 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
       setTimeout(() => btn.innerText = 'Copy', 2000);
     });
 
-    // Initial Start & Auto-Tick every 3 seconds
+    // -------------------------------------------------------------
+    // Lifecycle Init
+    // -------------------------------------------------------------
+    window.addEventListener('resize', resizeCanvases);
+    window.addEventListener('load', () => {
+      initCandles();
+      resizeCanvases();
+    });
     initCandles();
     setTimeout(resizeCanvases, 50);
+    setTimeout(resizeCanvases, 250);
 
+    // Live Candlestick Simulation Tick every 2.5s
     setInterval(() => {
-      // Live tick update
       const last = candles[candles.length - 1];
       const change = (Math.random() - 0.49) * (last.close * 0.001);
       last.close += change;
