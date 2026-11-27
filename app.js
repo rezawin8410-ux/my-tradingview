@@ -4,12 +4,80 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.4.0';
+var VERSION = '3.4.1';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
 var OSC_H = 118;
 var OSC_MIN = 84;
+
+/* ================= Instrument picker (in-page, not the native popup) =================
+   A native <select> relies on the platform to draw its dropdown. Several Android
+   WebViews — including the one this page is opened in — silently decline to, so the
+   list "does not open" even though the element is perfectly healthy. Drawing the
+   list ourselves removes that dependency entirely and gives a bigger touch target
+   plus search, which a 9-row native spinner cannot offer. */
+
+function symList() {
+  return Object.keys(SYMBOLS).map(function (k) {
+    return { id: k, label: SYMBOLS[k].label, pair: SYMBOLS[k].gate, dec: SYMBOLS[k].dec };
+  });
+}
+
+function setSymLabel() {
+  if (!els.symLbl) return;
+  var S = SYMBOLS[state.symbol];
+  els.symLbl.textContent = S ? S.label : state.symbol;
+}
+
+function renderSymList(filter) {
+  if (!els.symBody) return;
+  var q = (filter || "").toLowerCase().trim();
+  var rows = symList().filter(function (r) {
+    return !q || r.label.toLowerCase().indexOf(q) >= 0 || r.id.indexOf(q) >= 0 ||
+           (r.pair && r.pair.toLowerCase().indexOf(q) >= 0);
+  });
+  els.symBody.innerHTML = "";
+  if (!rows.length) {
+    var e = document.createElement("div");
+    e.className = "cat-empty";
+    e.textContent = 'nothing matches "' + filter + '"';
+    els.symBody.appendChild(e);
+    return;
+  }
+  rows.forEach(function (r) {
+    var b = document.createElement("button");
+    b.className = "sym-row" + (r.id === state.symbol ? " on" : "");
+    b.type = "button";
+    b.innerHTML = '<span class="sym-n">' + r.label + '</span>' +
+      '<span class="sym-p">' + (r.pair || r.id) + '</span>' +
+      (r.id === state.symbol ? '<span class="sym-t">✓</span>' : '');
+    b.addEventListener("click", function () { chooseSymbol(r.id); });
+    els.symBody.appendChild(b);
+  });
+}
+
+function chooseSymbol(id) {
+  if (!SYMBOLS[id]) return;
+  var changed = id !== state.symbol;
+  state.symbol = id;
+  if (changed) state.offset = 0;
+  setSymLabel();
+  closeSymPicker();
+  savePrefs();
+  if (changed) loadData(true); else updateHud();
+}
+
+function openSymPicker() {
+  if (!els.symModal) return;
+  els.symModal.classList.remove("hidden");
+  renderSymList("");
+  if (els.symSearch) { els.symSearch.value = ""; els.symSearch.focus(); }
+}
+
+function closeSymPicker() {
+  if (els.symModal) els.symModal.classList.add("hidden");
+}
 
 /* ---------------- Universe ----------------
    Two providers, measured 2026-11-27 from this network:
@@ -2795,11 +2863,33 @@ function bindEvents() {
       savePrefs(); loadData(true);
     });
   });
-  els.sym.addEventListener('change', function (e) {
-    state.symbol = e.target.value;
-    state.offset = 0;
-    savePrefs(); loadData(true);
-  });
+  /* Guarded: if an old cached index.html meets new app.js the page must still
+     boot and still offer a working instrument control, not die on a null. */
+  if (els.symBtn) {
+    els.symBtn.addEventListener('click', openSymPicker);
+    if (els.symClose) els.symClose.addEventListener('click', closeSymPicker);
+    if (els.symModal) els.symModal.addEventListener('click', function (e) { if (e.target === els.symModal) closeSymPicker(); });
+    if (els.symSearch) {
+      els.symSearch.addEventListener('input', function (e) { renderSymList(e.target.value); });
+      /* Escape closes it, and the first match is chosen on Enter so the list is
+         usable without ever lifting a finger off the keyboard. */
+      els.symSearch.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { closeSymPicker(); return; }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var first = els.symBody && els.symBody.querySelector('.sym-row');
+          if (first) first.click();
+        }
+      });
+    }
+  } else if (els.sym) {
+    /* an older page still carrying the native select */
+    els.sym.addEventListener('change', function (e) {
+      state.symbol = e.target.value;
+      state.offset = 0;
+      savePrefs(); loadData(true);
+    });
+  }
   els.reset.addEventListener('click', resetView);
   els.catBtn.addEventListener('click', function () { openCatalogue(''); });
   els.catClose.addEventListener('click', closeCat);
@@ -2854,7 +2944,13 @@ function boot() {
   els.hTime = document.getElementById('hTime');
   els.hRange = document.getElementById('hRange');
   els.chips = document.getElementById('chips');
+  els.symBtn = document.getElementById('symBtn');
   els.sym = document.getElementById('symSel');
+  els.symLbl = document.getElementById('symLbl');
+  els.symModal = document.getElementById('symModal');
+  els.symBody = document.getElementById('symBody');
+  els.symSearch = document.getElementById('symSearch');
+  els.symClose = document.getElementById('symClose');
   els.tfGroup = document.getElementById('tfGroup');
   els.reset = document.getElementById('resetBtn');
   els.catBtn = document.getElementById('catBtn');
@@ -2878,15 +2974,19 @@ function boot() {
   els.edMsg = document.getElementById('edMsg');
   els.verTag = document.getElementById('verTag');
 
-  // populate symbol select
-  Object.keys(SYMBOLS).forEach(function (k) {
-    var o = document.createElement('option');
-    o.value = k; o.textContent = SYMBOLS[k].label;
-    els.sym.appendChild(o);
-  });
-
   var hadPrefs = loadPrefs();
-  els.sym.value = state.symbol;
+  if (!SYMBOLS[state.symbol]) state.symbol = Object.keys(SYMBOLS)[0];
+  setSymLabel();
+  /* populate a native select only if the page still has one (older cache) */
+  if (!els.symBtn && els.sym) {
+    var ok0 = Object.keys(SYMBOLS), oi;
+    for (oi = 0; oi < ok0.length; oi++) {
+      var op = document.createElement('option');
+      op.value = ok0[oi]; op.textContent = SYMBOLS[ok0[oi]].label;
+      els.sym.appendChild(op);
+    }
+    els.sym.value = state.symbol;
+  }
   document.querySelectorAll('#tfGroup .tf-btn').forEach(function (b) {
     b.classList.toggle('active-tf', b.getAttribute('data-tf') === state.tf);
   });
