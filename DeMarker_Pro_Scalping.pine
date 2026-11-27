@@ -1,0 +1,313 @@
+//@version=5
+indicator("DeMarker Pro for Scalping — Full Customizable (Fixed)", overlay=false, max_lines_count=500)
+
+// ==================================================================
+// ================ تنظیمات کاربر — بخش اصلی =========================
+// ==================================================================
+
+// ---------- تنظیمات کلی ----------
+showConfluence = input.bool(true, "نمایش سیگنال همگرایی (Confluence)", group="تنظیمات کلی")
+volFilter = input.bool(true, "فیلتر با حجم", group="تنظیمات کلی")
+volAvgLen = input.int(20, "طول میانگین حجم", minval=5, group="تنظیمات کلی")
+
+// ---------- سطوح اشباع ----------
+obLevel = input.float(0.8, "سطح اشباع خرید", minval=0.5, maxval=0.99, group="سطوح")
+osLevel = input.float(0.2, "سطح اشباع فروش", minval=0.01, maxval=0.5, group="سطوح")
+
+// ---------- واگرایی ----------
+divLookback = input.int(25, "Lookback واگرایی", minval=10, maxval=60, group="واگرایی")
+minBarDist = input.int(4, "حداقل فاصله کندلی", minval=2, group="واگرایی")
+minPriceMove = input.float(0.0001, "حداقل حرکت قیمتی (پیپ)", minval=0.00001, group="واگرایی")
+
+bullDivColor = input.color(color.green, "رنگ واگرایی خرید", group="واگرایی")
+bearDivColor = input.color(color.red, "رنگ واگرایی فروش", group="واگرایی")
+hiddenDivColor = input.color(color.yellow, "رنگ واگرایی پنهان", group="واگرایی")
+divLineWidth = input.int(1, "ضخامت خطوط واگرایی", minval=1, maxval=3, group="واگرایی")
+
+// ---------- DeMarker 1 ----------
+enable1 = input.bool(true, "فعال‌سازی", inline="1", group="DeMarker 1")
+tf1     = input.timeframe("1", "تایم‌فریم", inline="1", group="DeMarker 1")
+len1    = input.int(7, "دوره", minval=1, inline="1", group="DeMarker 1")
+col1    = input.color(color.blue, "رنگ", inline="1", group="DeMarker 1")
+showSig1 = input.bool(true, "سیگنال", inline="1", group="DeMarker 1")
+sigLen1 = input.int(3, "طول سیگنال", minval=1, inline="1", group="DeMarker 1")
+sigColor1 = input.color(color.new(color.blue, 50), "رنگ سیگنال", inline="1", group="DeMarker 1")
+sigWidth1 = input.int(1, "ضخامت", minval=1, maxval=4, inline="1", group="DeMarker 1")
+showDiv1 = input.bool(true, "واگرایی", inline="1", group="DeMarker 1")
+
+// ---------- DeMarker 2 ----------
+enable2 = input.bool(true, "فعال‌سازی", inline="2", group="DeMarker 2")
+tf2     = input.timeframe("5", "تایم‌فریم", inline="2", group="DeMarker 2")
+len2    = input.int(14, "دوره", minval=1, inline="2", group="DeMarker 2")
+col2    = input.color(color.orange, "رنگ", inline="2", group="DeMarker 2")
+showSig2 = input.bool(true, "سیگنال", inline="2", group="DeMarker 2")
+sigLen2 = input.int(5, "طول سیگنال", minval=1, inline="2", group="DeMarker 2")
+sigColor2 = input.color(color.new(color.orange, 50), "رنگ سیگنال", inline="2", group="DeMarker 2")
+sigWidth2 = input.int(1, "ضخامت", minval=1, maxval=4, inline="2", group="DeMarker 2")
+showDiv2 = input.bool(true, "واگرایی", inline="2", group="DeMarker 2")
+
+// ---------- DeMarker 3 ----------
+enable3 = input.bool(false, "فعال‌سازی", inline="3", group="DeMarker 3")
+tf3     = input.timeframe("15", "تایم‌فریم", inline="3", group="DeMarker 3")
+len3    = input.int(21, "دوره", minval=1, inline="3", group="DeMarker 3")
+col3    = input.color(color.purple, "رنگ", inline="3", group="DeMarker 3")
+showSig3 = input.bool(false, "سیگنال", inline="3", group="DeMarker 3")
+sigLen3 = input.int(5, "طول سیگنال", minval=1, inline="3", group="DeMarker 3")
+sigColor3 = input.color(color.new(color.purple, 50), "رنگ سیگنال", inline="3", group="DeMarker 3")
+sigWidth3 = input.int(1, "ضخامت", minval=1, maxval=4, inline="3", group="DeMarker 3")
+showDiv3 = input.bool(false, "واگرایی", inline="3", group="DeMarker 3")
+
+// ==================================================================
+// ================ محاسبات اصلی =====================================
+// ==================================================================
+
+// ---------- میانگین حجم ----------
+volAvg = volFilter ? ta.sma(volume, volAvgLen) : 0
+
+// ---------- تابع DeMarker ----------
+demarker_func(src_high, src_low, length) =>
+    demax = math.max(src_high - src_high[1], 0)
+    demin = math.max(src_low[1] - src_low, 0)
+    demaxSma = ta.sma(demax, length)
+    deminSma = ta.sma(demin, length)
+    result = demaxSma / (demaxSma + deminSma)
+    result
+
+// ---------- DeMarker 1 ----------
+dm1 = enable1 ? request.security(syminfo.tickerid, tf1, demarker_func(high, low, len1), lookahead=barmerge.lookahead_on) : na
+high1 = enable1 ? request.security(syminfo.tickerid, tf1, high, lookahead=barmerge.lookahead_on) : na
+low1 = enable1 ? request.security(syminfo.tickerid, tf1, low, lookahead=barmerge.lookahead_on) : na
+vol1 = enable1 ? request.security(syminfo.tickerid, tf1, volume, lookahead=barmerge.lookahead_on) : na
+sig1 = showSig1 ? ta.ema(dm1, sigLen1) : na
+
+// ---------- DeMarker 2 ----------
+dm2 = enable2 ? request.security(syminfo.tickerid, tf2, demarker_func(high, low, len2), lookahead=barmerge.lookahead_on) : na
+high2 = enable2 ? request.security(syminfo.tickerid, tf2, high, lookahead=barmerge.lookahead_on) : na
+low2 = enable2 ? request.security(syminfo.tickerid, tf2, low, lookahead=barmerge.lookahead_on) : na
+vol2 = enable2 ? request.security(syminfo.tickerid, tf2, volume, lookahead=barmerge.lookahead_on) : na
+sig2 = showSig2 ? ta.ema(dm2, sigLen2) : na
+
+// ---------- DeMarker 3 ----------
+dm3 = enable3 ? request.security(syminfo.tickerid, tf3, demarker_func(high, low, len3), lookahead=barmerge.lookahead_on) : na
+high3 = enable3 ? request.security(syminfo.tickerid, tf3, high, lookahead=barmerge.lookahead_on) : na
+low3 = enable3 ? request.security(syminfo.tickerid, tf3, low, lookahead=barmerge.lookahead_on) : na
+vol3 = enable3 ? request.security(syminfo.tickerid, tf3, volume, lookahead=barmerge.lookahead_on) : na
+sig3 = showSig3 ? ta.ema(dm3, sigLen3) : na
+
+// ==================================================================
+// ================ نمایش DeMarker و سیگنال‌ها ========================
+// ==================================================================
+
+plot(enable1 ? dm1 : na, title="DeMarker 1", color=col1, linewidth=2)
+plot(enable1 and showSig1 ? sig1 : na, title="Signal 1", color=sigColor1, linewidth=sigWidth1)
+
+plot(enable2 ? dm2 : na, title="DeMarker 2", color=col2, linewidth=2)
+plot(enable2 and showSig2 ? sig2 : na, title="Signal 2", color=sigColor2, linewidth=sigWidth2)
+
+plot(enable3 ? dm3 : na, title="DeMarker 3", color=col3, linewidth=2)
+plot(enable3 and showSig3 ? sig3 : na, title="Signal 3", color=sigColor3, linewidth=sigWidth3)
+
+hline(obLevel, "Overbought", color=color.red, linestyle=hline.style_dashed)
+hline(osLevel, "Oversold", color=color.green, linestyle=hline.style_dashed)
+hline(0.5, "Mid", color=color.gray, linestyle=hline.style_dotted)
+
+// ==================================================================
+// ================ واگرایی برای DeMarker 1 ===========================
+// ==================================================================
+
+if enable1 and showDiv1
+    var float lastLowPrice1 = na
+    var float lastLowDM1 = na
+    var int   lastLowBar1 = na
+    var float lastHighPrice1 = na
+    var float lastHighDM1 = na
+    var int   lastHighBar1 = na
+
+    pivotLow1 = not na(ta.pivotlow(low1, divLookback, divLookback))
+    if pivotLow1
+        lastLowPrice1 := low1[divLookback]
+        lastLowDM1 := dm1[divLookback]
+        lastLowBar1 := bar_index - divLookback
+
+    pivotHigh1 = not na(ta.pivothigh(high1, divLookback, divLookback))
+    if pivotHigh1
+        lastHighPrice1 := high1[divLookback]
+        lastHighDM1 := dm1[divLookback]
+        lastHighBar1 := bar_index - divLookback
+
+    volOk1 = not volFilter or vol1 >= volAvg
+
+    // Bullish Divergence
+    if not na(lastLowPrice1) and (bar_index - lastLowBar1) >= minBarDist
+        priceMove = math.abs(low1 - lastLowPrice1)
+        if priceMove >= minPriceMove and low1 < lastLowPrice1 and dm1 > lastLowDM1 and dm1 < osLevel and lastLowDM1 < osLevel and volOk1
+            line.new(x1=lastLowBar1, y1=lastLowDM1, x2=bar_index, y2=dm1, color=bullDivColor, width=divLineWidth)
+            lastLowPrice1 := na
+            lastLowDM1 := na
+            lastLowBar1 := na
+
+    // Bearish Divergence
+    if not na(lastHighPrice1) and (bar_index - lastHighBar1) >= minBarDist
+        priceMove = math.abs(high1 - lastHighPrice1)
+        if priceMove >= minPriceMove and high1 > lastHighPrice1 and dm1 < lastHighDM1 and dm1 > obLevel and lastHighDM1 > obLevel and volOk1
+            line.new(x1=lastHighBar1, y1=lastHighDM1, x2=bar_index, y2=dm1, color=bearDivColor, width=divLineWidth)
+            lastHighPrice1 := na
+            lastHighDM1 := na
+            lastHighBar1 := na
+
+    // Hidden Bullish Divergence
+    if not na(lastLowPrice1) and (bar_index - lastLowBar1) >= minBarDist
+        if low1 > lastLowPrice1 and dm1 < lastLowDM1 and dm1 < osLevel and lastLowDM1 < osLevel and volOk1
+            line.new(x1=lastLowBar1, y1=lastLowDM1, x2=bar_index, y2=dm1, color=hiddenDivColor, width=divLineWidth, style=line.style_dotted)
+            lastLowPrice1 := na
+            lastLowDM1 := na
+            lastLowBar1 := na
+
+    // Hidden Bearish Divergence
+    if not na(lastHighPrice1) and (bar_index - lastHighBar1) >= minBarDist
+        if high1 < lastHighPrice1 and dm1 > lastHighDM1 and dm1 > obLevel and lastHighDM1 > obLevel and volOk1
+            line.new(x1=lastHighBar1, y1=lastHighDM1, x2=bar_index, y2=dm1, color=hiddenDivColor, width=divLineWidth, style=line.style_dotted)
+            lastHighPrice1 := na
+            lastHighDM1 := na
+            lastHighBar1 := na
+
+// ==================================================================
+// ================ واگرایی برای DeMarker 2 ===========================
+// ==================================================================
+
+if enable2 and showDiv2
+    var float lastLowPrice2 = na
+    var float lastLowDM2 = na
+    var int   lastLowBar2 = na
+    var float lastHighPrice2 = na
+    var float lastHighDM2 = na
+    var int   lastHighBar2 = na
+
+    pivotLow2 = not na(ta.pivotlow(low2, divLookback, divLookback))
+    if pivotLow2
+        lastLowPrice2 := low2[divLookback]
+        lastLowDM2 := dm2[divLookback]
+        lastLowBar2 := bar_index - divLookback
+
+    pivotHigh2 = not na(ta.pivothigh(high2, divLookback, divLookback))
+    if pivotHigh2
+        lastHighPrice2 := high2[divLookback]
+        lastHighDM2 := dm2[divLookback]
+        lastHighBar2 := bar_index - divLookback
+
+    volOk2 = not volFilter or vol2 >= volAvg
+
+    if not na(lastLowPrice2) and (bar_index - lastLowBar2) >= minBarDist
+        priceMove = math.abs(low2 - lastLowPrice2)
+        if priceMove >= minPriceMove and low2 < lastLowPrice2 and dm2 > lastLowDM2 and dm2 < osLevel and lastLowDM2 < osLevel and volOk2
+            line.new(x1=lastLowBar2, y1=lastLowDM2, x2=bar_index, y2=dm2, color=bullDivColor, width=divLineWidth)
+            lastLowPrice2 := na
+            lastLowDM2 := na
+            lastLowBar2 := na
+
+    if not na(lastHighPrice2) and (bar_index - lastHighBar2) >= minBarDist
+        priceMove = math.abs(high2 - lastHighPrice2)
+        if priceMove >= minPriceMove and high2 > lastHighPrice2 and dm2 < lastHighDM2 and dm2 > obLevel and lastHighDM2 > obLevel and volOk2
+            line.new(x1=lastHighBar2, y1=lastHighDM2, x2=bar_index, y2=dm2, color=bearDivColor, width=divLineWidth)
+            lastHighPrice2 := na
+            lastHighDM2 := na
+            lastHighBar2 := na
+
+    if not na(lastLowPrice2) and (bar_index - lastLowBar2) >= minBarDist
+        if low2 > lastLowPrice2 and dm2 < lastLowDM2 and dm2 < osLevel and lastLowDM2 < osLevel and volOk2
+            line.new(x1=lastLowBar2, y1=lastLowDM2, x2=bar_index, y2=dm2, color=hiddenDivColor, width=divLineWidth, style=line.style_dotted)
+            lastLowPrice2 := na
+            lastLowDM2 := na
+            lastLowBar2 := na
+
+    if not na(lastHighPrice2) and (bar_index - lastHighBar2) >= minBarDist
+        if high2 < lastHighPrice2 and dm2 > lastHighDM2 and dm2 > obLevel and lastHighDM2 > obLevel and volOk2
+            line.new(x1=lastHighBar2, y1=lastHighDM2, x2=bar_index, y2=dm2, color=hiddenDivColor, width=divLineWidth, style=line.style_dotted)
+            lastHighPrice2 := na
+            lastHighDM2 := na
+            lastHighBar2 := na
+
+// ==================================================================
+// ================ واگرایی برای DeMarker 3 ===========================
+// ==================================================================
+
+if enable3 and showDiv3
+    var float lastLowPrice3 = na
+    var float lastLowDM3 = na
+    var int   lastLowBar3 = na
+    var float lastHighPrice3 = na
+    var float lastHighDM3 = na
+    var int   lastHighBar3 = na
+
+    pivotLow3 = not na(ta.pivotlow(low3, divLookback, divLookback))
+    if pivotLow3
+        lastLowPrice3 := low3[divLookback]
+        lastLowDM3 := dm3[divLookback]
+        lastLowBar3 := bar_index - divLookback
+
+    pivotHigh3 = not na(ta.pivothigh(high3, divLookback, divLookback))
+    if pivotHigh3
+        lastHighPrice3 := high3[divLookback]
+        lastHighDM3 := dm3[divLookback]
+        lastHighBar3 := bar_index - divLookback
+
+    volOk3 = not volFilter or vol3 >= volAvg
+
+    if not na(lastLowPrice3) and (bar_index - lastLowBar3) >= minBarDist
+        priceMove = math.abs(low3 - lastLowPrice3)
+        if priceMove >= minPriceMove and low3 < lastLowPrice3 and dm3 > lastLowDM3 and dm3 < osLevel and lastLowDM3 < osLevel and volOk3
+            line.new(x1=lastLowBar3, y1=lastLowDM3, x2=bar_index, y2=dm3, color=bullDivColor, width=divLineWidth)
+            lastLowPrice3 := na
+            lastLowDM3 := na
+            lastLowBar3 := na
+
+    if not na(lastHighPrice3) and (bar_index - lastHighBar3) >= minBarDist
+        priceMove = math.abs(high3 - lastHighPrice3)
+        if priceMove >= minPriceMove and high3 > lastHighPrice3 and dm3 < lastHighDM3 and dm3 > obLevel and lastHighDM3 > obLevel and volOk3
+            line.new(x1=lastHighBar3, y1=lastHighDM3, x2=bar_index, y2=dm3, color=bearDivColor, width=divLineWidth)
+            lastHighPrice3 := na
+            lastHighDM3 := na
+            lastHighBar3 := na
+
+    if not na(lastLowPrice3) and (bar_index - lastLowBar3) >= minBarDist
+        if low3 > lastLowPrice3 and dm3 < lastLowDM3 and dm3 < osLevel and lastLowDM3 < osLevel and volOk3
+            line.new(x1=lastLowBar3, y1=lastLowDM3, x2=bar_index, y2=dm3, color=hiddenDivColor, width=divLineWidth, style=line.style_dotted)
+            lastLowPrice3 := na
+            lastLowDM3 := na
+            lastLowBar3 := na
+
+    if not na(lastHighPrice3) and (bar_index - lastHighBar3) >= minBarDist
+        if high3 < lastHighPrice3 and dm3 > lastHighDM3 and dm3 > obLevel and lastHighDM3 > obLevel and volOk3
+            line.new(x1=lastHighBar3, y1=lastHighDM3, x2=bar_index, y2=dm3, color=hiddenDivColor, width=divLineWidth, style=line.style_dotted)
+            lastHighPrice3 := na
+            lastHighDM3 := na
+            lastHighBar3 := na
+
+// ==================================================================
+// ================ سیگنال همگرایی (Confluence) ======================
+// ==================================================================
+
+var label confluenceLabel = na
+
+bullConfluence = enable1 and enable2 and 
+   dm1 < osLevel and dm2 < osLevel and 
+   dm1 > sig1 and dm2 > sig2
+
+bearConfluence = enable1 and enable2 and 
+   dm1 > obLevel and dm2 > obLevel and 
+   dm1 < sig1 and dm2 < sig2
+
+if showConfluence and (bullConfluence or bearConfluence)
+    label.delete(confluenceLabel)
+    confluenceLabel := label.new(
+      x=bar_index, 
+      y=0.5, 
+      text=bullConfluence ? "✅ CONFLUENCE BUY" : "❌ CONFLUENCE SELL",
+      color=bullConfluence ? color.green : color.red,
+      textcolor=color.white,
+      style=label.style_label_center,
+      xloc=xloc.bar_index)
+
+// ==================================================================
+// ================ پایان کد =========================================
+// ==================================================================
