@@ -126,7 +126,10 @@ select.sym{background:#2a2e39;color:#fff;border:1px solid #363a45;border-radius:
   font-size:13px;cursor:pointer;text-align:left;min-height:40px}
 .sym-row:hover{background:#26304a;border-color:#2962ff}
 .sym-row.on{background:#1e2a4a;border-color:#2c4a8a}
-.sym-n{font-weight:600;flex:1 1 auto}
+.sym-n{font-weight:600;flex:1 1 auto;display:flex;flex-direction:column;gap:1px}
+.sym-cap{color:#6b7280;font-weight:400;font-size:10px;letter-spacing:.01em}
+.tf-btn.off{opacity:.34;cursor:not-allowed;text-decoration:line-through}
+.tf-btn.off:hover{background:#2a2e39}
 .sym-p{color:#787b86;font-family:ui-monospace,Menlo,monospace;font-size:11px}
 .sym-t{color:#37d39b;font-weight:700}
 .sym-foot{flex:0 0 auto;padding:7px 10px;background:#181b24;border-top:1px solid #2a2e39;
@@ -259,6 +262,6 @@ textarea.expr:focus{border-color:#2962ff}
   </div>
 </div>
 
-<script src="app.js?v=3.4.1"></script>
+<script src="app.js?v=3.5.1"></script>
 </body>
 </html>
