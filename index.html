@@ -17,6 +17,7 @@ body{display:flex;flex-direction:column}
 /* ---- header ---- */
 header{flex:0 0 auto;background:#1e222d;border-bottom:1px solid #2a2e39;
   display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px}
+header button,header select{min-height:30px}
 .hleft{display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .hleft::-webkit-scrollbar{display:none}
 .hright{display:flex;align-items:center;gap:5px;flex:0 0 auto}
@@ -114,6 +115,22 @@ select.sym{background:#2a2e39;color:#fff;border:1px solid #363a45;border-radius:
 .bbody::-webkit-scrollbar{width:5px}
 .bbody::-webkit-scrollbar-thumb{background:#2a2e39;border-radius:3px}
 .bfoot{flex:0 0 auto;padding:9px;background:#181b24;border-top:1px solid #2a2e39;display:flex;justify-content:flex-end;gap:7px}
+/* instrument picker: drawn in-page because the native select popup is not
+   offered by every Android WebView */
+.symbtn{display:inline-flex;align-items:center;gap:6px;max-width:190px;min-height:30px;
+  padding:6px 8px;font-size:12px;text-align:left}
+.symbtn #symLbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
+.symbtn .chev{color:#7aa2ff;font-size:11px;flex:0 0 auto}
+.sym-row{width:100%;display:flex;align-items:center;gap:8px;background:#20242f;
+  border:1px solid #2a2e39;border-radius:5px;color:#dfe4ee;padding:10px 10px;margin-bottom:4px;
+  font-size:13px;cursor:pointer;text-align:left;min-height:40px}
+.sym-row:hover{background:#26304a;border-color:#2962ff}
+.sym-row.on{background:#1e2a4a;border-color:#2c4a8a}
+.sym-n{font-weight:600;flex:1 1 auto}
+.sym-p{color:#787b86;font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.sym-t{color:#37d39b;font-weight:700}
+.sym-foot{flex:0 0 auto;padding:7px 10px;background:#181b24;border-top:1px solid #2a2e39;
+  color:#6b7280;font-size:10.5px;text-align:center}
 .cat-h{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;
   padding:9px 4px 5px;font-weight:700}
 .cat-row{width:100%;display:flex;align-items:center;justify-content:space-between;background:#20242f;
@@ -155,7 +172,7 @@ textarea.expr:focus{border-color:#2962ff}
 <header>
   <div class="hleft">
     <span class="dot idle" id="liveDot" title="checking feed…"></span>
-    <select id="symSel" class="sym" title="instrument"></select>
+    <button type="button" id="symBtn" class="sym symbtn" title="choose instrument"><span id="symLbl">…</span><span class="chev" aria-hidden="true">▾</span></button>
     <div class="tfs" id="tfGroup">
       <button class="tf-btn" data-tf="1m">1m</button>
       <button class="tf-btn" data-tf="3m">3m</button>
@@ -215,6 +232,16 @@ textarea.expr:focus{border-color:#2962ff}
 </div>
 
 <!-- catalogue -->
+<!-- instrument picker -->
+<div class="mask hidden" id="symModal">
+  <div class="box">
+    <div class="bhead"><span>Instruments</span><button class="bx" id="symClose" type="button">×</button></div>
+    <div class="bsearch"><input id="symSearch" type="text" placeholder="search gold, btc, sol…" autocomplete="off" spellcheck="false"></div>
+    <div class="bbody" id="symBody"></div>
+    <div class="sym-foot">spot pairs from Gate.io · Enter picks the first match</div>
+  </div>
+</div>
+
 <div class="mask hidden" id="catModal">
   <div class="box">
     <div class="bhead"><span>Indicators</span><button class="bx" id="catClose">×</button></div>
@@ -232,6 +259,6 @@ textarea.expr:focus{border-color:#2962ff}
   </div>
 </div>
 
-<script src="app.js?v=3.4.0"></script>
+<script src="app.js?v=3.4.1"></script>
 </body>
 </html>
