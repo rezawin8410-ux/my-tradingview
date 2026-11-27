@@ -33,6 +33,18 @@ select.sym{background:#2a2e39;color:#fff;border:1px solid #363a45;border-radius:
 .btn.ind{background:#1e3a5f;border-color:#2c5a8f;color:#cfe3ff}
 .btn.ind:hover{background:#254b7a}
 .live-count{color:#089981;font-weight:600}
+/* ── chrome hiding ── four independent layers + a master. Layout is owned by
+   CSS so the canvas can re-measure; the price/feed tag is never hideable. */
+.grabbing-v{cursor:grabbing!important}
+#hud.hidden,#chipsBar.hidden,#showUiBtn.hidden{display:none!important}
+header.hidden{display:none!important}
+.btn.off,.cat-row.off{opacity:.5}
+.chrome-hint{color:#6b7280;font-size:10.5px;padding:0 10px 7px;margin-top:-2px}
+.show-ui{position:fixed;top:8px;right:8px;z-index:70;background:#1e3a5f;color:#cfe3ff;
+  border:1px solid #2c5a8f;border-radius:5px;padding:6px 10px;font-size:12px;cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.5)}
+.show-ui:hover{background:#254b7a}
+html[data-ui="off"] .hright{display:none}
 .stale-count{color:#787b86}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 .tfs{display:flex;gap:3px}
@@ -188,9 +200,11 @@ textarea.expr:focus{border-color:#2962ff}
     </div>
   </div>
   <div class="hright">
-    <button class="btn icon" id="resetBtn" title="reset zoom &amp; pan (or double-click chart)">⟲</button>
+    <button class="btn icon" id="resetBtn" title="reset zoom &amp; pan (0 or double-click)">⟲</button>
+    <button class="btn icon" id="chromeBtn" title="which labels and bars to show (Alt+H hides everything)">&#9881;&#65039;">◧</button>
     <button class="btn ind" id="catBtn" title="browse and add indicators">▤ <span class="txt">Indicators (0)</span></button>
     <button class="btn primary" id="edBtn" title="formula / Pine reference">&lt;/&gt; <span class="txt">Formula</span></button>
+    <button class="btn" id="uiBtn" title="hide every control and label (Alt+H)">◱ <span class="txt">Hide UI</span></button>
   </div>
 </header>
 
@@ -235,6 +249,17 @@ textarea.expr:focus{border-color:#2962ff}
 </div>
 
 <!-- catalogue -->
+<!-- chrome sheet -->
+<div class="mask hidden" id="chromeSheet">
+  <div class="box">
+    <div class="bhead"><span>Show / hide</span><button class="bx" id="chromeClose" type="button">×</button></div>
+    <div class="bbody" id="chromeBody"></div>
+  </div>
+</div>
+
+<!-- floating restore, only visible while the whole UI is hidden -->
+<button type="button" id="showUiBtn" class="show-ui hidden" title="bring the controls back (Alt+H)">◲ controls</button>
+
 <!-- instrument picker -->
 <div class="mask hidden" id="symModal">
   <div class="box">
@@ -262,6 +287,6 @@ textarea.expr:focus{border-color:#2962ff}
   </div>
 </div>
 
-<script src="app.js?v=3.6.0"></script>
+<script src="app.js?v=3.7.0"></script>
 </body>
 </html>
