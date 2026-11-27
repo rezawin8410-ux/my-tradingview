@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.5.2';
+var VERSION = '3.6.0';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -2575,15 +2575,25 @@ function cacheSet(sym, tf, provider, candles) {
 var loadGen = 0;
 var loadCtl = null;
 
+/* What the in-flight load is FOR. Re-entering with the SAME intent must be a
+   no-op: v3.4 aborted unconditionally, so the 5s poll killed its own in-flight
+   load forever and the chart never filled (observed: 26 polls, 0 bars). */
+var loadIntent = null;
+
+function intentKey(sym, tf) { return sym + '|' + tf; }
+
 async function loadData(force) {
-  var gen = ++loadGen;
   var wantSym = state.symbol, wantTf = state.tf;
   var spec = TFS[wantTf];
+  var intent = intentKey(wantSym, wantTf);
 
-  /* cancel whatever previous request is still in flight */
-  if (loadCtl) { try { loadCtl.abort(); } catch (e) {} }
+  if (loadIntent === intent && state.busy) return;      /* already running: leave it */
+
+  if (loadCtl) { try { loadCtl.abort(); } catch (e) {} }  /* superseded user intent */
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
   loadCtl = ctl;
+  loadIntent = intent;
+  var gen = ++loadGen;
 
   state.busy = true;
   setMsg('loading…');
@@ -2592,7 +2602,8 @@ async function loadData(force) {
   /* 1. fresh cache wins — keeps us under the free rate limits */
   var cached = cacheGet(wantSym, wantTf);
   if (cached && !force && (Date.now() - cached.t) < CACHE_TTL) {
-    if (gen !== loadGen) return;
+    if (gen !== loadGen || loadIntent !== intent) return;
+    state.busy = false; loadCtl = null; loadIntent = null;
     applyData(cached.candles, 'cached', cached.p, wantSym, wantTf);
     return;
   }
@@ -2606,7 +2617,7 @@ async function loadData(force) {
     if (!pv.supports(wantTf, wantSym)) { attempts.push(pv.label + ': unsupported ' + wantTf); continue; }
     try {
       var res = await pv.fetch(wantSym, wantTf, signal);
-      if (gen !== loadGen) return;               /* superseded while in flight */
+      if (gen !== loadGen || loadIntent !== intent) return;   /* superseded in flight */
       if (ctl && ctl.signal && ctl.signal.aborted) return;
       cacheSet(wantSym, wantTf, pv.id, res.candles);
       applyData(res.candles, 'live', pv.id, wantSym, wantTf, res.note);
@@ -2618,7 +2629,7 @@ async function loadData(force) {
   }
 
   /* 2. every provider failed → stale cache is better than fiction */
-  if (gen !== loadGen) return;
+  if (gen !== loadGen || loadIntent !== intent) return;
   if (cached) {
     applyData(cached.candles, 'stale', cached.p || 'unknown', wantSym, wantTf);
     setMsg('providers unreachable — showing last cached data');
@@ -2646,6 +2657,7 @@ function applyData(candles, mode, provider, wantSym, wantTf, note) {
   state.offset = Math.min(state.offset, Math.max(0, candles.length - state.visible - 1));
   state.busy = false;
   loadCtl = null;
+  loadIntent = null;
   updateHud();
   redrawAll();
   /* kick off any extra timeframe series the active indicators declared */
@@ -2672,10 +2684,20 @@ function localTick() {
   updateHud(); scheduleBase();
 }
 
+var polling = false;
+
 async function pollLatest() {
-  pollCount++;
+  pollCount++;                              /* ticks: the HUD can prove the timer lives */
+  if (state.busy || polling) return;        /* never disturb an in-flight load, never overlap */
   if (!state.candles.length) { loadData(false); return; }
   if (state.source === 'sim') { localTick(); return; }
+  polling = true;
+  try { await pollLatestInner(); }
+  catch (e) { pollFails++; state.pollErr = ((e && e.message) || e) + ''; }
+  finally { polling = false; updateHud(); }
+}
+
+async function pollLatestInner() {
   var S = SYMBOLS[state.symbol], spec = TFS[state.tf];
 
   /* FX: only the spot tick moves; there is no bar stream to merge from */
@@ -2725,6 +2747,14 @@ async function pollLatest() {
       } else if (b.time > state.candles[state.candles.length - 1].time) {
         state.candles.push(b); changed++;
       }
+    }
+    /* the newest bar is by definition still forming; when the payload rolls over
+       the previous newest becomes final, so the outline never sits on a closed bar */
+    if (state.candles.length) {
+      var newest = state.candles[state.candles.length - 1];
+      if (!newest.provisional) { newest.provisional = true; changed++; }
+      var older = state.candles[state.candles.length - 2];
+      if (older && older.provisional) { older.provisional = false; changed++; }
     }
     pollFails = 0;
     state.pollErr = '';
@@ -2840,7 +2870,12 @@ function updateHud() {
     badge.title = state.msg || 'no data source reachable — these bars are invented, do not trade on them';
   }
   els.hTime.textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '—';
-  els.hRange.textContent = 'bars ' + cs.length + ' · shown ' + Math.min(state.visible, cs.length) + ' · zoom ' + state.visible;
+  /* poll counter + age of the last ACTUAL change separates "polling, market flat"
+     from "dead" — the very thing that looked broken */
+  var ageSec = lastChangeAt ? Math.round((Date.now() - lastChangeAt) / 1000) : null;
+  els.hRange.textContent = 'bars ' + cs.length + ' · shown ' + Math.min(state.visible, cs.length) +
+    ' · poll #' + pollCount + (ageSec == null ? '' : ' · changed ' + ageSec + 's ago') +
+    ' · every ' + (POLL_MS / 1000) + 's';
   els.verTag.textContent = 'v' + VERSION;
 
   /* countdown to the close of the forming bar — the clearest proof the feed moves */
