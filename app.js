@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.4.1';
+var VERSION = '3.5.1';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -18,9 +18,21 @@ var OSC_MIN = 84;
    list ourselves removes that dependency entirely and gives a bigger touch target
    plus search, which a 9-row native spinner cannot offer. */
 
+function supportedTfs(S) {
+  return (S && S.tfs && S.tfs.length) ? S.tfs : TF_ORDER;
+}
+
+function symCap(S) {
+  if (!S) return '';
+  if (S.noVolume) return 'daily only · OHLC inferred from closes · no volume';
+  return '1m → 1D · real exchange OHLCV + volume';
+}
+
 function symList() {
   return Object.keys(SYMBOLS).map(function (k) {
-    return { id: k, label: SYMBOLS[k].label, pair: SYMBOLS[k].gate, dec: SYMBOLS[k].dec };
+    var S = SYMBOLS[k];
+    return { id: k, label: S.label, pair: S.gate || (S.fx ? S.fx + '/USD' : S.id),
+             dec: S.dec, tfs: supportedTfs(S), cap: symCap(S) };
   });
 }
 
@@ -49,7 +61,8 @@ function renderSymList(filter) {
     var b = document.createElement("button");
     b.className = "sym-row" + (r.id === state.symbol ? " on" : "");
     b.type = "button";
-    b.innerHTML = '<span class="sym-n">' + r.label + '</span>' +
+    b.innerHTML = '<span class="sym-n">' + r.label +
+      '<span class="sym-cap">' + r.cap + '</span></span>' +
       '<span class="sym-p">' + (r.pair || r.id) + '</span>' +
       (r.id === state.symbol ? '<span class="sym-t">✓</span>' : '');
     b.addEventListener("click", function () { chooseSymbol(r.id); });
@@ -62,12 +75,33 @@ function chooseSymbol(id) {
   var changed = id !== state.symbol;
   state.symbol = id;
   if (changed) state.offset = 0;
+  /* a symbol that only publishes daily bars must not be left sitting on 1m */
+  var allow = supportedTfs(SYMBOLS[id]);
+  if (allow.indexOf(state.tf) < 0) {
+    state.tf = allow[allow.length - 1];
+    state.offset = 0;
+  }
+  syncTfButtons();
   setSymLabel();
   closeSymPicker();
   savePrefs();
   if (changed) loadData(true); else updateHud();
 }
 
+/* Grey out timeframes the instrument cannot serve, and say why on hover,
+   instead of letting the user tap 1m on FX and get synthesised bars. */
+function syncTfButtons() {
+  var allow = supportedTfs(SYMBOLS[state.symbol]);
+  document.querySelectorAll('#tfGroup .tf-btn').forEach(function (b) {
+    var tf = b.getAttribute('data-tf');
+    var on = allow.indexOf(tf) >= 0;
+    b.classList.toggle('active-tf', tf === state.tf);
+    b.classList.toggle('off', !on);
+    b.disabled = !on;
+    b.title = on ? 'switch to ' + tf :
+      SYMBOLS[state.symbol].label + ' has no ' + tf + ' feed — use PAXG/XAUT for intraday gold';
+  });
+}
 function openSymPicker() {
   if (!els.symModal) return;
   els.symModal.classList.remove("hidden");
@@ -87,8 +121,12 @@ function closeSymPicker() {
    `gate` is primary because it returns genuine open/high/low/volume; `cg` only derives
    high/low from consecutive ticks, which is acceptable for coarse frames, not for 1m. */
 var SYMBOLS = {
-  'pax-gold':    { label: 'GOLD (PAXG/USDT)', dec: 2, gate: 'PAXG_USDT', cg: 'pax-gold',    ref: 3670 },
-  'tether-gold': { label: 'GOLD (XAUT/USDT)', dec: 2, gate: 'XAUT_USDT', cg: 'tether-gold', ref: 3675 },
+  /* forex gold: no exchange pair. History from fawazahmed0 dated releases,
+     live tick from gold-api. 1D only — see the module comment above. */
+  'xauusd':      { label: 'GOLD · XAU/USD (forex)', dec: 2, fx: 'XAU', fxCode: 'xau',
+                   tfs: ['1D'], noVolume: true },
+  'pax-gold':    { label: 'GOLD (PAXG/USDT) · intraday', dec: 2, gate: 'PAXG_USDT', cg: 'pax-gold',    ref: 3670 },
+  'tether-gold': { label: 'GOLD (XAUT/USDT) · intraday', dec: 2, gate: 'XAUT_USDT', cg: 'tether-gold', ref: 3675 },
   'bitcoin':     { label: 'BTC/USDT',         dec: 2, gate: 'BTC_USDT',  cg: 'bitcoin',     ref: 61800 },
   'ethereum':    { label: 'ETH/USDT',         dec: 2, gate: 'ETH_USDT',  cg: 'ethereum',    ref: 2100 },
   'solana':      { label: 'SOL/USDT',         dec: 3, gate: 'SOL_USDT',  cg: 'solana',      ref: 145 },
@@ -925,7 +963,9 @@ var DEFS = {
          than 30 bars has no meaningful value area, and a window wider than the loaded
          history is not silently shrunk — both produce NO profile. On 1D this means the
          24h window is 1 bar, so the real Pine draws nothing there either. */
+      var noVolData = cs.every(function (z) { return z.volume == null; });
       var vp1 = (n1 >= 30 && cs.length > n1) ? volumeProfile(cs, n1, p.bins, p.vaPct) : null;
+      if (vp1 && noVolData) res.notes.push('volume profile is price-binned: this instrument has no volume feed');
       var vp2 = (p.show2 && p.winH2 > 0 && n2 >= 30 && cs.length > n2) ? volumeProfile(cs, n2, p.bins, p.vaPct) : null;
       if (n1 < 30) res.notes.push('24h window = ' + n1 + ' bar(s) < 30 → no profile (same as the Pine)');
       else if (cs.length <= n1) res.notes.push('need ' + (n1 + 1) + ' bars for the 24h window, have ' + cs.length + ' → no profile');
@@ -1277,7 +1317,7 @@ var DEFS = {
     }
   },
   mfi: {
-    name: 'Money Flow Index', pane: 'osc', scale: '0-100',
+    name: 'Money Flow Index', pane: 'osc', scale: '0-100', usesVolume: true,
     params: [{ k: 'len', l: 'Length', t: 'int', d: 14, min: 2, max: 100 }],
     compute: function (C, p, cs) {
       return { series: [{ title: 'MFI ' + p.len, data: mfi(cs, p.len), color: '#7c4dff', width: 2 }],
@@ -1635,9 +1675,20 @@ function recompute() {
     volume: cs.map(function (c) { return c.volume; })
   };
   var out = [];
+  var noVol = !!(SYMBOLS[state.symbol] && SYMBOLS[state.symbol].noVolume);
   state.active.forEach(function (a) {
     var d = DEFS[a.def];
     var r = null, err = null;
+    /* volume is absent for FX spot. Plotting zeros or a uniform weight would
+       draw a confident, meaningless line — so the indicator bows out and says why. */
+    if (noVol && (d.pane === 'vol' || d.usesVolume)) {
+      out.push({ uid: a.uid, def: a.def, pane: d.pane, scale: d.scale || 'auto',
+                 title: a.title || d.name,
+                 r: { series: [], levels: [], markers: [], lines: [],
+                      notes: ['no volume feed for FX spot — use PAXG/XAUT for volume work'] },
+                 error: null });
+      return;
+    }
     try {
       r = d.compute(ctx, a.params, cs);
     } catch (e) {
@@ -2269,7 +2320,10 @@ var PROVIDERS = {
     id: 'gate',
     label: 'Gate.io',
     realCandles: true,
-    supports: function (tf) { return !!TFS[tf].gate; },
+    supports: function (tf, sym) {
+      var S = SYMBOLS[sym];
+      return !!(S && S.gate) && !!TFS[tf].gate;
+    },
     fetch: async function (sym, tf, signal) {
       var S = SYMBOLS[sym], spec = TFS[tf];
       if (!S || !S.gate) throw new Error('no gate pair');
@@ -2285,11 +2339,54 @@ var PROVIDERS = {
       return { candles: clean, note: clean.length + ' bars' };
     }
   },
+  fx: {
+    id: 'fx',
+    label: 'fawazahmed0 + gold-api',
+    realCandles: false,
+    noVolume: true,
+    /* 1D only. There is no keyless, CORS-open intraday FX feed, and inventing
+       1m bars out of daily closes would be fabricated data on a live chart. */
+    supports: function (tf, sym) {
+      var S = SYMBOLS[sym];
+      return !!(S && S.fx) && tf === '1D';
+    },
+    fetch: async function (sym, tf, signal) {
+      var S = SYMBOLS[sym];
+      if (!S || !S.fx) throw new Error('no fx instrument');
+      if (tf !== '1D') throw new Error('fx is daily only');
+      var days = fxDays();
+      var closes = await fxPool(days.map(function (d) {
+        return function (sig) { return fxFetchDay(d, S.fxCode, sig); };
+      }), FX_CONCURRENCY, signal);
+      var pts = fxBuildCloses(days, closes);
+      if (pts.length < 3) throw new Error('only ' + pts.length + ' daily closes reachable');
+      var cs = fxFromCloses(pts);
+      var spot = null, spotAt = null;
+      try {
+        var j = await fxSpotFetch(S.fx, signal);
+        spot = j.price; spotAt = j.updatedAt;
+        cs = fxApplySpot(cs, spot, Math.floor(Date.now() / 1000));
+      } catch (e) {
+        /* history is still honest without the live tick — say what is missing */
+        cs = sanitize(cs);
+      }
+      var clean = sanitize(cs);
+      if (clean.length < 3) throw new Error('only ' + clean.length + ' valid bars');
+      var miss = days.length - pts.length;
+      var note = clean.length + ' daily bars from ' + pts.length + ' dated closes' +
+        (miss ? ' · ' + miss + ' day(s) unavailable' : '') +
+        (spot != null ? ' · live spot @ ' + (spotAt || '') : ' · live spot unreachable');
+      return { candles: clean, note: note, spot: spot, spotAt: spotAt };
+    }
+  },
   cg: {
     id: 'cg',
     label: 'CoinGecko',
     realCandles: false,
-    supports: function (tf) { return TFS[tf].sec >= TFS[tf].cgMin; },
+    supports: function (tf, sym) {
+      var S = SYMBOLS[sym];
+      return !!(S && S.cg) && TFS[tf].sec >= TFS[tf].cgMin;
+    },
     fetch: async function (sym, tf, signal) {
       var S = SYMBOLS[sym], spec = TFS[tf];
       if (!S || !S.cg) throw new Error('no coingecko id');
@@ -2308,7 +2405,127 @@ var PROVIDERS = {
     }
   }
 };
-var PROVIDER_ORDER = ['gate', 'cg'];
+var PROVIDER_ORDER = ['gate', 'cg', 'fx'];
+
+/* ═══════════════ FX provider (metals / spot FX, keyless, CORS-open) ═══════════════
+   Two endpoints, because neither alone is enough:
+     history — fawazahmed0 currency-api, one immutable dated release per day.
+               Dated releases never change, so each day is cached forever and a
+               reload costs zero requests. @latest is NOT used for today: it lags
+               a day, which would silently mis-stamp the newest candle.
+     live    — gold-api.com spot, polled like an exchange tick so the forming
+               daily bar actually moves.
+   No volume anywhere, so candles carry volume: null and the UI says so. */
+
+var FX_DAYS = 90;
+var FX_CONCURRENCY = 6;
+
+function utcDay(tsSec) { return new Date(tsSec * 1000).toISOString().slice(0, 10); }
+function dayStartUtc(dateStr) { return Math.floor(new Date(dateStr + "T00:00:00Z").getTime() / 1000); }
+function addDays(dateStr, n) {
+  var d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function fxDays() {
+  var today = utcDay(Math.floor(Date.now() / 1000));
+  var out = [], i;
+  for (i = FX_DAYS - 1; i >= 0; i--) out.push(addDays(today, -i));
+  return out;
+}
+
+function fxFetchDay(dateStr, code, signal) {
+  /* immutable per date → cache forever; a 404 is never cached (a date can
+     appear later, and caching the miss would pin it missing) */
+  var ck = 'fx1_' + code + '_' + dateStr;
+  var hit = lsGet(ck);
+  if (hit != null && isFinite(hit)) return Promise.resolve(hit);
+  var url = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@' + dateStr +
+            '/v1/currencies/' + code + '.min.json';
+  return fetch(url, { headers: { Accept: 'application/json' }, signal: signal }).then(function (r) {
+    if (!r.ok) throw new Error('http ' + r.status);
+    return r.json();
+  }).then(function (j) {
+    var v = j && j[code] && j[code].usd;
+    if (typeof v !== 'number' || !isFinite(v)) throw new Error('no usd rate');
+    lsSet(ck, v);
+    return v;
+  });
+}
+
+function fxPool(tasks, limit, signal) {
+  /* bounded parallelism: 120 sequential requests would take minutes on a phone */
+  return new Promise(function (resolve) {
+    var out = new Array(tasks.length), i = 0, running = 0, done = 0;
+    function step() {
+      if (done === tasks.length) { resolve(out); return; }
+      while (running < limit && i < tasks.length) {
+        (function (idx) {
+          running++;
+          tasks[idx](signal).then(function (v) { out[idx] = v; },
+                                  function () { out[idx] = null; })
+            .then(function () { running--; done++; step(); });
+        })(i);
+        i++;
+      }
+    }
+    step();
+  });
+}
+
+function fxBuildCloses(days, closes) {
+  var pts = [], i;
+  for (i = 0; i < days.length; i++) {
+    if (typeof closes[i] === 'number' && isFinite(closes[i])) pts.push({ d: days[i], c: closes[i] });
+  }
+  return pts;
+}
+
+function fxFromCloses(pts) {
+  /* open = previous close, high/low = bound of the two closes. Two points per
+     day cannot know the true intraday extremes, so this is derived, not real OHLC. */
+  var out = [], i;
+  for (i = 1; i < pts.length; i++) {
+    var o = pts[i - 1].c, c = pts[i].c;
+    out.push({ time: dayStartUtc(pts[i].d), open: o, high: Math.max(o, c), low: Math.min(o, c),
+               close: c, volume: null, derived: true });
+  }
+  return out;
+}
+
+function fxApplySpot(cs, spot, nowSec) {
+  /* stamp the live price onto today's bar; create it if the dated release for
+     today has not been published yet */
+  if (typeof spot !== 'number' || !isFinite(spot) || spot <= 0) return cs;
+  var today = dayStartUtc(utcDay(nowSec));
+  var last = cs[cs.length - 1];
+  if (!last || last.time < today) {
+    var prevClose = last ? last.close : spot;
+    cs.push({ time: today, open: prevClose, high: Math.max(prevClose, spot),
+              low: Math.min(prevClose, spot), close: spot, volume: null, derived: true, provisional: true });
+  } else {
+    last.close = spot;
+    last.high = Math.max(last.high, spot);
+    last.low = Math.min(last.low, spot);
+    last.provisional = true;
+  }
+  /* every earlier bar is final */
+  var i;
+  for (i = 0; i < cs.length - 1; i++) cs[i].provisional = false;
+  return cs;
+}
+
+function fxSpotFetch(code, signal) {
+  return fetch('https://api.gold-api.com/price/' + code,
+               { headers: { Accept: 'application/json' }, signal: signal }).then(function (r) {
+    if (!r.ok) throw new Error('spot http ' + r.status);
+    return r.json();
+  }).then(function (j) {
+    if (!j || typeof j.price !== 'number' || !isFinite(j.price)) throw new Error('no spot price');
+    return j;
+  });
+}
 
 /* ---------------- Cache ---------------- */
 function cacheKey(sym, tf) { return 'tv3_' + sym + '_' + tf; }
@@ -2357,7 +2574,7 @@ async function loadData(force) {
   for (var i = 0; i < PROVIDER_ORDER.length; i++) {
     var pv = PROVIDERS[PROVIDER_ORDER[i]];
     if (!pv) continue;
-    if (!pv.supports(wantTf)) { attempts.push(pv.label + ': unsupported ' + wantTf); continue; }
+    if (!pv.supports(wantTf, wantSym)) { attempts.push(pv.label + ': unsupported ' + wantTf); continue; }
     try {
       var res = await pv.fetch(wantSym, wantTf, signal);
       if (gen !== loadGen) return;               /* superseded while in flight */
@@ -2427,6 +2644,31 @@ async function pollLatest() {
   if (!state.candles.length) { loadData(false); return; }
   if (state.source === 'sim') { localTick(); return; }
   var S = SYMBOLS[state.symbol], spec = TFS[state.tf];
+
+  /* FX: only the spot tick moves; there is no bar stream to merge from */
+  if (S && S.fx && state.tf === '1D' && state.provider === 'fx') {
+    try {
+      var jj = await fxSpotFetch(S.fx);
+      var before = state.candles.length;
+      var t0 = Date.now();
+      state.candles = fxApplySpot(state.candles, jj.price, Math.floor(t0 / 1000));
+      var moved = state.candles[state.candles.length - 1].close;
+      pollFails = 0; state.pollErr = '';
+      state.updatedAt = t0;
+      if (moved !== state.lastSpot || state.candles.length !== before) {
+        state.lastSpot = moved;
+        lastChangeAt = t0;
+        recompute(); scheduleBase();
+      }
+      updateHud();
+    } catch (e) {
+      pollFails++;
+      state.pollErr = ((e && e.message) || e) + '';
+      updateHud();
+    }
+    return;
+  }
+
   if (!S || !S.gate || !spec || !spec.gate) return;
 
   var url = 'https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=' + S.gate +
@@ -2508,7 +2750,9 @@ function updateHud() {
   if (!els.hSym) return;                 /* headless / pre-boot: nothing to write */
   var last = cs[cs.length - 1], prev = cs[cs.length - 2] || last;
   var chg = last.close - prev.close, pct = prev.close ? chg / prev.close * 100 : 0;
-  els.hSym.textContent = (SYMBOLS[state.symbol] ? SYMBOLS[state.symbol].label : state.symbol) + ' · ' + state.tf;
+  var Sy = SYMBOLS[state.symbol];
+  els.hSym.textContent = (Sy ? Sy.label : state.symbol) + ' · ' + state.tf +
+    (Sy && Sy.noVolume ? ' · no volume' : '');
   els.hPrice.textContent = fmt(last.close);
   els.hPrice.className = chg >= 0 ? 'text-emerald-400' : 'text-rose-400';
   els.hChg.textContent = (chg >= 0 ? '+' : '') + fmt(chg) + ' (' + pct.toFixed(2) + '%)';
@@ -2542,10 +2786,22 @@ function updateHud() {
     var barSec = barSeconds(cs) || (TFS[state.tf] && TFS[state.tf].sec) || 60;
     var isProv = !!cs[cs.length - 1].provisional;
     var left = cs[cs.length - 1].time + barSec - Math.floor(Date.now() / 1000);
-    if (!isProv) els.hNext.textContent = 'last bar CLOSED · poll ' + (POLL_MS / 1000) + 's';
-    else if (left > 0) els.hNext.textContent = 'forming bar closes in ' + left + 's';
-    else els.hNext.textContent = 'bar closing…';
-    els.hNext.className = isProv && left > 0 ? 'live-count' : 'stale-count';
+    /* a daily bar does not close in seconds — printing "closes in 86400s" would
+       be technically right and useless, so switch to hours for wide frames */
+    if (barSec >= 3600) {
+      var units = left >= 3600
+        ? Math.floor(left / 3600) + 'h'
+        : Math.max(0, Math.floor(left / 60)) + 'm';
+      els.hNext.textContent = isProv && left > 0
+        ? 'forming bar closes in ' + units + ' · spot polled ' + (POLL_MS / 1000) + 's'
+        : 'last bar CLOSED · poll ' + (POLL_MS / 1000) + 's';
+      els.hNext.className = isProv && left > 0 ? 'live-count' : 'stale-count';
+    } else {
+      if (!isProv) els.hNext.textContent = 'last bar CLOSED · poll ' + (POLL_MS / 1000) + 's';
+      else if (left > 0) els.hNext.textContent = 'forming bar closes in ' + left + 's';
+      else els.hNext.textContent = 'bar closing…';
+      els.hNext.className = isProv && left > 0 ? 'live-count' : 'stale-count';
+    }
   }
   heartbeat();
 }
@@ -2753,7 +3009,7 @@ function loadPrefs() {
   var p = lsGet('prefs3');
   if (!p) return false;
   if (SYMBOLS[p.symbol]) state.symbol = p.symbol;
-  if (TFS[p.tf]) state.tf = p.tf;
+  if (TFS[p.tf] && supportedTfs(SYMBOLS[state.symbol]).indexOf(p.tf) >= 0) state.tf = p.tf;
   if (p.visible) state.visible = p.visible;
   if (p.active && p.active.length) {
     p.active.forEach(function (a) {
@@ -2857,6 +3113,7 @@ function bindEvents() {
   document.querySelectorAll('#tfGroup .tf-btn').forEach(function (b) {
     b.addEventListener('click', function () {
       document.querySelectorAll('#tfGroup .tf-btn').forEach(function (x) { x.classList.remove('active-tf'); });
+      if (b.disabled) return;
       b.classList.add('active-tf');
       state.tf = b.getAttribute('data-tf');
       state.offset = 0; state.visible = 70;
@@ -2987,9 +3244,7 @@ function boot() {
     }
     els.sym.value = state.symbol;
   }
-  document.querySelectorAll('#tfGroup .tf-btn').forEach(function (b) {
-    b.classList.toggle('active-tf', b.getAttribute('data-tf') === state.tf);
-  });
+  syncTfButtons();
   if (!els.edText.value.trim()) els.edText.value = 'ema($close,21)';
 
   if (!hadPrefs || !state.active.length) {
