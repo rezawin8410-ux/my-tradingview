@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.8.1';
+var VERSION = '3.9.0';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -1632,6 +1632,8 @@ var state = {
      belongs to, so it can never be painted over a different instrument. */
   priceWin: null, priceWinFor: null,
   oscWin: null, oscWinFor: null,
+  oscWins: {},   /* manual windows keyed by scale group */
+  osBands: [],
   chrome: { legend: true, names: true, hud: true, tools: true, ui: true },
   computed: null,
   geo: null,
@@ -1862,6 +1864,74 @@ function volScale(geo, v) {
   };
 }
 
+/* Partition the oscillator pane by SCALE GROUP. Two studies with different
+   units must not share one axis — that collision is what painted full-height
+   verticals when MACD (-91..+57) was drawn on DeMarker's 0-1 axis. */
+function oscGroupList(comps) {
+  var order = [], map = {};
+  comps.forEach(function (c) {
+    if (c.pane !== 'osc') return;
+    var key = c.scale || 'auto';
+    if (!map[key]) { map[key] = { key: key, inds: [], fixed: key !== 'auto' }; order.push(map[key]); }
+    map[key].inds.push(c.uid);
+  });
+  return order;
+}
+
+function oscBands(geo, comps, v) {
+  var list = oscGroupList(comps);
+  if (!list.length || !(geo.oscH > 0)) return [];
+  var n = list.length;
+  var bandH = Math.max(46, Math.floor(geo.oscH / n));
+  list.forEach(function (g, i) {
+    g.top = geo.oscTop + i * bandH;
+    g.h = (i === n - 1) ? Math.max(24, geo.oscTop + geo.oscH - g.top) : bandH;
+    var lo = Infinity, hi = -Infinity, k, uid, c, j;
+    for (j = 0; j < g.inds.length; j++) {
+      uid = g.inds[j];
+      c = null;
+      for (k = 0; k < comps.length; k++) if (comps[k].uid === uid) { c = comps[k]; break; }
+      if (!c) continue;
+      (c.r.series || []).forEach(function (s) {
+        for (var q = v.start; q < v.end; q++) {
+          var val = s.data[q];
+          if (val == null || !isFinite(val)) continue;
+          if (val < lo) lo = val; if (val > hi) hi = val;
+        }
+      });
+    }
+    if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
+    if (hi === lo) { hi += 1; lo -= 1; }
+    if (g.fixed) {
+      var F = { '0-1': [0, 1], '0-100': [0, 100], '-100-0': [-100, 0], '-100-100': [-100, 100] };
+      var fr = F[g.key];
+      g.lo = fr ? fr[0] : lo; g.hi = fr ? fr[1] : hi;
+      g.dataLo = g.lo; g.dataHi = g.hi;
+    } else {
+      var pd = (hi - lo) * 0.12;
+      var auto = { lo: lo - pd, hi: hi + pd };
+      var man = state.oscWins[g.key];
+      var w = (state.oscWinsFor === navIntent() && man) ? clampWin(man, lo, hi) : auto;
+      g.lo = w.lo; g.hi = w.hi; g.dataLo = lo; g.dataHi = hi;
+    }
+    g.toY = function (p) { return this.top + this.h - ((p - this.lo) / (this.hi - this.lo)) * this.h; };
+    g.toP = function (y) { return this.lo + (1 - (y - this.top) / this.h) * (this.hi - this.lo); };
+  });
+  return list;
+}
+
+function bandOfUid(bands, uid) {
+  for (var i = 0; i < bands.length; i++)
+    if (bands[i].inds.indexOf(uid) >= 0) return bands[i];
+  return null;
+}
+
+function bandAtY(bands, y) {
+  for (var i = 0; i < bands.length; i++)
+    if (y >= bands[i].top && y < bands[i].top + bands[i].h) return bands[i];
+  return bands.length ? bands[bands.length - 1] : null;
+}
+
 function oscScale(geo, comps, v) {
   var items = comps.filter(function (c) { return c.pane === 'osc'; });
   if (!items.length) return null;
@@ -1950,6 +2020,8 @@ function drawBase() {
   var ps = priceScale(geo, v, state.computed);
   var vs = volScale(geo, v);
   var os = oscScale(geo, state.computed, v);
+  var bands = oscBands(geo, state.computed, v);
+  state.osBands = bands;
   state.scales = { ps: ps, vs: vs, os: os, v: v, geo: geo };
 
   var bw = barW(geo, v);
@@ -2051,7 +2123,7 @@ function drawBase() {
   state.computed.forEach(function (c) {
     var toY = null;
     if (c.pane === 'price') toY = ps.toY;
-    else if (c.pane === 'osc' && os) toY = os.toY;
+    else if (c.pane === 'osc') toY = (bandOfUid(state.osBands || [], c.uid) || os || {}).toY;
     else if (c.pane === 'vol' && geo.volH) toY = vs.toY;
     if (!toY) return;
     (c.r.markers || []).forEach(function (m) {
@@ -2088,8 +2160,9 @@ function drawBase() {
   /* osc pane */
   if (geo.oscH && os) {
     state.computed.filter(function (c) { return c.pane === 'osc'; }).forEach(function (c) {
+      var bs = bandOfUid(bands, c.uid) || os;
       (c.r.levels || []).forEach(function (L) {
-        var yy = os.toY(L.price);
+        var yy = bs.toY(L.price);
         ctx.strokeStyle = L.color || '#555'; ctx.lineWidth = 1; ctx.setLineDash([4, 2]);
         ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(geo.plotW, yy); ctx.stroke();
         ctx.setLineDash([]);
@@ -2099,12 +2172,12 @@ function drawBase() {
           for (var k = 0; k < v.n; k++) {
             var val = s.data[v.start + k];
             if (val == null) continue;
-            var zero = os.toY(Math.max(0, os.lo));
-            var yy2 = os.toY(val);
+            var zero = bs.toY(Math.max(0, bs.lo));
+            var yy2 = bs.toY(val);
             ctx.fillStyle = val >= 0 ? 'rgba(8,153,129,0.6)' : 'rgba(242,54,69,0.6)';
             ctx.fillRect(barX(geo, v, k), Math.min(yy2, zero), bw, Math.abs(zero - yy2));
           }
-        } else drawLine(ctx, s, geo, v, os.toY);
+        } else drawLine(ctx, s, geo, v, bs.toY);
       });
       (c.r.lines || []).forEach(function (L) {
         /* a divergence joins two bars — draw it when either end is on screen,
@@ -2117,15 +2190,22 @@ function drawBase() {
         ctx.lineWidth = L.width || 1;
         if (L.dotted) ctx.setLineDash([2, 2]); else ctx.setLineDash([]);
         ctx.beginPath();
-        ctx.moveTo(barX(geo, v, k1) + bw / 2, os.toY(L.y1));
-        ctx.lineTo(barX(geo, v, k2) + bw / 2, os.toY(L.y2));
+        ctx.moveTo(barX(geo, v, k1) + bw / 2, bs.toY(L.y1));
+        ctx.lineTo(barX(geo, v, k2) + bw / 2, bs.toY(L.y2));
         ctx.stroke();
         ctx.setLineDash([]);
       });
     });
-    /* osc axis labels */
+    /* osc axis labels — per band, so each group reads against its own axis */
     ctx.fillStyle = '#787b86'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(fmtAxis(os.hi), geo.plotW + 5, geo.oscTop + 8);
+    bands.forEach(function (b) {
+      ctx.fillText(fmtAxis(b.hi), geo.plotW + 5, b.top + 8);
+      ctx.fillText(fmtAxis(b.lo), geo.plotW + 5, b.top + b.h - 8);
+      if (b.top > geo.oscTop) {
+        ctx.strokeStyle = '#2a2e39'; ctx.lineWidth = 1; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(0, b.top); ctx.lineTo(geo.plotW, b.top); ctx.stroke();
+      }
+    });
     ctx.fillText(fmtAxis(os.lo), geo.plotW + 5, geo.oscTop + geo.oscH - 8);
   }
 
@@ -2807,7 +2887,7 @@ function applyData(candles, mode, provider, wantSym, wantTf, note) {
   state.dataTf = wantTf;
   /* a manual window fitted to another instrument or frame is meaningless here */
   if (state.priceWinFor !== wantSym + '|' + wantTf) { state.priceWin = null; state.priceWinFor = null; }
-  if (state.oscWinFor !== wantSym + '|' + wantTf) { state.oscWin = null; state.oscWinFor = null; }
+  if (state.oscWinsFor !== wantSym + '|' + wantTf) { state.oscWins = {}; state.oscWinsFor = null; state.oscWin = null; state.oscWinFor = null; }
   /* MTF bars belong to a symbol, so a symbol switch invalidates them */
   if (state.symbolLoadedFor !== wantSym) { resetMtf(); state.symbolLoadedFor = wantSym; }
   state.source = mode;
@@ -3438,9 +3518,13 @@ function updateNavBar() {
     els.posLbl.textContent = state.offset === 0 ? 'newest' : '\u2212' + state.offset + ' bars back';
     els.posLbl.className = state.offset === 0 ? 'nav-ok' : 'nav-back';
   }
+  var anyOscManual = false;
+  if (state.oscWinsFor === navIntent()) {
+    for (var ok in state.oscWins) if (state.oscWins[ok]) { anyOscManual = true; break; }
+  }
   if (els.axisLbl) {
     var pm = !!(state.priceWin && state.priceWinFor === navIntent());
-    els.axisLbl.textContent = pm ? 'price: manual' : 'price: auto';
+    els.axisLbl.textContent = pm ? 'price: manual' : (anyOscManual ? 'osc: manual' : 'price: auto');
     els.axisLbl.className = pm ? 'nav-back' : 'nav-ok';
     els.axisLbl.title = pm
       ? 'price axis is hand-placed — press ⟲ (or 0) for auto-fit'
@@ -3475,8 +3559,9 @@ function bindEvents() {
     if (onPriceAxis(p)) {
       var pane = paneAt(state.geo, p.y);
       if (pane === 'vol') return;                     /* volume stays proportional */
-      if (pane === 'osc' && state.scales && state.scales.os && state.scales.os.fixed) return;
-      state.drag = { mode: pane === 'osc' ? 'oscPan' : 'pricePan', y: e.clientY, x: p.x, pane: pane };
+      var ob = pane === 'osc' ? bandAtY(state.osBands || [], p.y) : null;
+      if (pane === 'osc' && (!ob || ob.fixed)) return;  /* a bounded study keeps its full range */
+      state.drag = { mode: pane === 'osc' ? 'oscPan' : 'pricePan', y: e.clientY, x: p.x, pane: pane, band: ob ? ob.key : null };
       stack.classList.add('grabbing-v');
     } else {
       state.drag = { mode: 'time', x: e.clientX, off: state.offset };
@@ -3503,12 +3588,16 @@ function bindEvents() {
         state.priceWinFor = navIntent();
         d.y = e.clientY;
         scheduleBase(); updateHud();
-      } else if (d.mode === 'oscPan' && state.scales.os && !state.scales.os.fixed) {
-        var oc = state.scales.os;
-        state.oscWin = panWin({ lo: oc.lo, hi: oc.hi }, e.clientY - d.y, state.geo.oscH, oc.dataLo, oc.dataHi);
-        state.oscWinFor = navIntent();
-        d.y = e.clientY;
-        scheduleBase(); updateHud();
+      } else if (d.mode === 'oscPan' && d.band) {
+        var ob2 = bandAtY(state.osBands || [], pos(e).y) || null;
+        var key = d.band;
+        var cur = ob2 && ob2.key === key ? ob2 : null;
+        if (cur) {
+          state.oscWins[key] = panWin({ lo: cur.lo, hi: cur.hi }, e.clientY - d.y, cur.h, cur.dataLo, cur.dataHi);
+          state.oscWinsFor = navIntent();
+          d.y = e.clientY;
+          scheduleBase(); updateHud();
+        }
       }
     } else if (state.geo) {
       /* affordance: the axis strip is draggable, so show it */
@@ -3530,11 +3619,11 @@ function bindEvents() {
     var f = e.deltaY < 0 ? 0.85 : 1.18;   /* <1 = zoom in */
     if (onPriceAxis(p) && state.geo && state.scales) {
       var pane = paneAt(state.geo, p.y);
-      if (pane === 'osc' && state.scales.os && !state.scales.os.fixed) {
-        var oc = state.scales.os;
-        state.oscWin = zoomWinAt({ lo: oc.lo, hi: oc.hi }, p.y, state.geo.oscTop, state.geo.oscH, f, oc.dataLo, oc.dataHi);
-        state.oscWinFor = navIntent();
-      } else if (pane !== 'vol') {
+      var ob3 = pane === 'osc' ? bandAtY(state.osBands || [], p.y) : null;
+      if (ob3 && !ob3.fixed) {
+        state.oscWins[ob3.key] = zoomWinAt({ lo: ob3.lo, hi: ob3.hi }, p.y, ob3.top, ob3.h, f, ob3.dataLo, ob3.dataHi);
+        state.oscWinsFor = navIntent();
+      } else if (pane !== 'osc' && pane !== 'vol') {
         var sc = state.scales.ps;
         state.priceWin = zoomWinAt({ lo: sc.lo, hi: sc.hi }, p.y, state.geo.priceTop, state.geo.priceH, f, sc.dataLo, sc.dataHi);
         state.priceWinFor = navIntent();
@@ -3722,6 +3811,7 @@ function resetView() {
   state.offset = 0; state.visible = 70;
   state.priceWin = null; state.priceWinFor = null;
   state.oscWin = null; state.oscWinFor = null;
+  state.oscWins = {}; state.oscWinsFor = null;
   scheduleBase(); updateHud(); savePrefs();
 }
 
