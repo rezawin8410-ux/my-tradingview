@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.7.0';
+var VERSION = '3.8.0';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -1739,7 +1739,13 @@ function paneAt(geo, y) {
 }
 
 function computeGeo() {
-  var W = els.stack.clientWidth, H = els.stack.clientHeight;
+  /* the stack may not exist yet (pre-boot, headless, or a stub DOM): fall back
+     to the viewport instead of throwing inside a layout helper */
+  var st = els.stack;
+  var W = st ? st.clientWidth : (window.innerWidth || 0);
+  var H = st ? st.clientHeight : (window.innerHeight || 0);
+  if (!(W > 0)) W = 320;
+  if (!(H > 0)) H = 480;
   var panes = paneSet();
   var volH = panes.vol ? VOL_H : 0;
   var oscH = panes.osc ? Math.min(340, OSC_H + Math.max(0, paneCount('osc') - 1) * 56) : 0;
@@ -2201,7 +2207,9 @@ function lastOf(arr, v) {
 function drawVitalTag(geo, v, ps) {
   var ctx = baseCtx;
   if (!ctx || !geo || !geo.W) return;
-  if (state.chrome.ui && state.chrome.hud) return;   /* the HUD strip already says it */
+  /* the tag exists precisely to replace the HUD; if the HUD is on screen the
+     information is already there, so do not duplicate it */
+  if (state.chrome.ui && state.chrome.hud) return;
   if (!state.candles.length || !dataMatches()) return;
   var last = state.candles[state.candles.length - 1];
   var Sy = SYMBOLS[state.symbol] || {};
@@ -2227,7 +2235,7 @@ function feedWord() {
 }
 
 function drawLegends(geo, v, ps, vs, os) {
-  if (!state.chrome.legend) return;      /* whole legend off */
+  if (!state.chrome.legend || !state.chrome.ui) return;   /* legend off, or whole UI hidden */
   var ctx = baseCtx, rows = [];
   ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
 
@@ -2378,8 +2386,10 @@ function redrawAll() { recompute(); scheduleBase(); }
 /* ---------------- Canvas sizing ---------------- */
 function sizeCanvases() {
   dpr = Math.min(2.5, window.devicePixelRatio || 1);
-  var W = els.stack.clientWidth || window.innerWidth;
-  var H = els.stack.clientHeight || (window.innerHeight - 150);
+  var st = els.stack;
+  if (!st) return;                       /* nothing mounted yet: nothing to size */
+  var W = st.clientWidth || window.innerWidth || 320;
+  var H = st.clientHeight || (window.innerHeight - 150) || 480;
   [els.base, els.overlay].forEach(function (cv) {
     cv.width = Math.round(W * dpr);
     cv.height = Math.round(H * dpr);
@@ -3024,6 +3034,9 @@ function updateHud() {
   /* poll counter + age of the last ACTUAL change separates "polling, market flat"
      from "dead" — the very thing that looked broken */
   var ageSec = lastChangeAt ? Math.round((Date.now() - lastChangeAt) / 1000) : null;
+  updateNavBar();
+  /* the title carries the version, so a stale cached build is obvious at a glance */
+  document.title = 'TradingView · v' + VERSION;
   els.hRange.textContent = 'bars ' + cs.length + ' · shown ' + Math.min(state.visible, cs.length) +
     ' · poll #' + pollCount + (ageSec == null ? '' : ' · changed ' + ageSec + 's ago') +
     ' · every ' + (POLL_MS / 1000) + 's';
@@ -3298,15 +3311,21 @@ var CHROME_KEYS = ['legend', 'names', 'hud', 'tools', 'ui'];
 
 function applyChrome(reflow) {
   var c = state.chrome;
+  /* ui is a master: it hides the strips too, but it must NOT overwrite the
+     individual flags, or restoring would flatten the user's per-layer choices */
+  var hudShown = c.hud && c.ui;
+  var legendShown = c.legend && c.ui;
+  var toolsShown = c.tools && c.ui;
   var root = document.documentElement;
   if (root) {
     root.setAttribute('data-ui', c.ui ? 'on' : 'off');
-    root.setAttribute('data-hud', c.hud ? 'on' : 'off');
-    root.setAttribute('data-tools', c.tools ? 'on' : 'off');
+    root.setAttribute('data-hud', hudShown ? 'on' : 'off');
+    root.setAttribute('data-tools', toolsShown ? 'on' : 'off');
   }
-  if (els.hudStrip) els.hudStrip.classList.toggle('hidden', !c.hud);
-  if (els.chipsBar) els.chipsBar.classList.toggle('hidden', !c.legend);
-  if (els.header) els.header.classList.toggle('hidden', !c.ui || !c.tools);
+  if (els.hudStrip) els.hudStrip.classList.toggle('hidden', !hudShown);
+  if (els.chipsBar) els.chipsBar.classList.toggle('hidden', !legendShown);
+  if (els.navBar) els.navBar.classList.toggle('hidden', !c.ui);
+  if (els.header) els.header.classList.toggle('hidden', !toolsShown);
   if (els.showUiBtn) els.showUiBtn.classList.toggle('hidden', c.ui);
   if (els.uiBtn) {
     els.uiBtn.textContent = c.ui ? '◱ <span class="txt">Hide UI</span>' : '◲ <span class="txt">Show UI</span>';
@@ -3372,6 +3391,65 @@ function renderChromeSheet() {
 }
 /* keyboard zoom keeps the right edge anchored, which is what you expect from a
    hotkey (there is no cursor to anchor on) */
+/* candle width IS the visible bar count: fewer bars = wider candles.
+   Named and pure so the gate can assert the clamps without a browser. */
+function setVisible(n) {
+  var len = state.candles.length || 1;
+  var lo = Math.min(MIN_BARS, len), hi = Math.max(lo, Math.min(Math.max(MAX_BARS, lo), Math.max(len, lo)));
+  var v = clampNum(Math.round(n || 0), lo, hi);
+  if (v === state.visible) return false;
+  state.visible = v;
+  state.offset = clampNum(state.offset, 0, Math.max(0, len - v));
+  scheduleBase(); updateHud(); savePrefs();
+  return true;
+}
+
+/* step sideways without a drag — the mobile fallback */
+function panBars(n) {
+  var len = state.candles.length;
+  if (!len) return false;
+  var no = clampNum(state.offset + n, 0, Math.max(0, len - state.visible));
+  if (no === state.offset) return false;
+  state.offset = no;
+  scheduleBase(); updateHud(); savePrefs();
+  return true;
+}
+
+function fitAll() {
+  var len = state.candles.length;
+  if (!len || state.visible >= len) return false;
+  state.visible = clampNum(len, Math.min(MIN_BARS, len), Math.max(MIN_BARS, len));
+  state.offset = 0;
+  scheduleBase(); updateHud(); savePrefs();
+  return true;
+}
+
+/* mirrors the live state so the user can see what a tap will actually do */
+function updateNavBar() {
+  var len = state.candles.length;
+  if (els.zoomSlider) {
+    els.zoomSlider.min = String(Math.min(MIN_BARS, Math.max(2, len)));
+    els.zoomSlider.max = String(Math.max(MIN_BARS, Math.min(MAX_BARS, len || MAX_BARS)));
+    els.zoomSlider.value = String(Math.min(state.visible, Number(els.zoomSlider.max)));
+  }
+  if (els.zoomLbl) els.zoomLbl.textContent = Math.min(state.visible, len || state.visible) + ' bars';
+  if (els.posLbl) {
+    els.posLbl.textContent = state.offset === 0 ? 'newest' : '\u2212' + state.offset + ' bars back';
+    els.posLbl.className = state.offset === 0 ? 'nav-ok' : 'nav-back';
+  }
+  if (els.axisLbl) {
+    var pm = !!(state.priceWin && state.priceWinFor === navIntent());
+    els.axisLbl.textContent = pm ? 'price: manual' : 'price: auto';
+    els.axisLbl.className = pm ? 'nav-back' : 'nav-ok';
+    els.axisLbl.title = pm
+      ? 'price axis is hand-placed — press ⟲ (or 0) for auto-fit'
+      : 'auto-fitted — drag the right axis strip to place it by hand';
+  }
+  if (els.fitBtn) els.fitBtn.disabled = !len || state.visible >= len;
+  if (els.panLBtn) els.panLBtn.disabled = state.offset >= Math.max(0, len - state.visible);
+  if (els.panRBtn) els.panRBtn.disabled = state.offset <= 0;
+}
+
 function zoomTimeKeys(factor) {
   if (!state.candles.length || !state.geo) return;
   var z = zoomTimeAt(state.visible, state.offset, state.candles.length, state.geo.plotW - 1, state.geo.plotW, factor);
@@ -3589,6 +3667,18 @@ function bindEvents() {
   if (els.uiBtn) els.uiBtn.addEventListener('click', function () { toggleChrome('ui'); });
   if (els.showUiBtn) els.showUiBtn.addEventListener('click', function () { toggleChrome('ui'); });
   if (els.chromeBtn) els.chromeBtn.addEventListener('click', openChromeSheet);
+  if (els.zoomInBtn) els.zoomInBtn.addEventListener('click', function () { zoomTimeKeys(0.7); });
+  if (els.zoomOutBtn) els.zoomOutBtn.addEventListener('click', function () { zoomTimeKeys(1.45); });
+  if (els.zoomSlider) els.zoomSlider.addEventListener('input', function (e) { setVisible(Number(e.target.value)); });
+  if (els.panLBtn) els.panLBtn.addEventListener('click', function () { panBars(Math.max(1, Math.round(state.visible / 4))); });
+  if (els.panRBtn) els.panRBtn.addEventListener('click', function () { panBars(-Math.max(1, Math.round(state.visible / 4))); });
+  if (els.fitBtn) els.fitBtn.addEventListener('click', fitAll);
+  if (els.hintClose) els.hintClose.addEventListener('click', function () {
+    if (els.hintBar) els.hintBar.classList.add('hidden');
+    lsSet('hintSeen3', 1);
+  });
+  /* the hint is shown once, then remembered as dismissed — not nagging forever */
+  if (els.hintBar && lsGet('hintSeen3')) els.hintBar.classList.add('hidden');
   if (els.chromeSheet) els.chromeSheet.addEventListener('click', function (e) { if (e.target === els.chromeSheet) closeChromeSheet(); });
   if (els.chromeClose) els.chromeClose.addEventListener('click', closeChromeSheet);
   els.catBtn.addEventListener('click', function () { openCatalogue(''); });
@@ -3665,6 +3755,18 @@ function boot() {
   els.showUiBtn = document.getElementById('showUiBtn');
   els.hNext = document.getElementById('hNext');
   els.chromeBtn = document.getElementById('chromeBtn');
+  els.navBar = document.getElementById('navBar');
+  els.zoomSlider = document.getElementById('zoomSlider');
+  els.zoomLbl = document.getElementById('zoomLbl');
+  els.posLbl = document.getElementById('posLbl');
+  els.axisLbl = document.getElementById('axisLbl');
+  els.panLBtn = document.getElementById('panLBtn');
+  els.panRBtn = document.getElementById('panRBtn');
+  els.fitBtn = document.getElementById('fitBtn');
+  els.zoomInBtn = document.getElementById('zoomInBtn');
+  els.zoomOutBtn = document.getElementById('zoomOutBtn');
+  els.hintBar = document.getElementById('hintBar');
+  els.hintClose = document.getElementById('hintClose');
   els.chromeSheet = document.getElementById('chromeSheet');
   els.chromeBody = document.getElementById('chromeBody');
   els.chromeClose = document.getElementById('chromeClose');
