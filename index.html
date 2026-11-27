@@ -1,818 +1,226 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Personal TradingView — Interactive Pro Chart</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    html, body {
-      background-color: #131722;
-      color: #d1d4dc;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    .active-tf { background-color: #2962ff !important; color: #fff !important; font-weight: bold; }
-    .custom-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
-    .custom-scroll::-webkit-scrollbar-thumb { background: #2a2e39; border-radius: 2px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>Personal TradingView — Pro Chart v3</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;width:100%;overflow:hidden;background:#131722;color:#d1d4dc;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px}
+body{display:flex;flex-direction:column}
+.hidden{display:none!important}
+.grabbing{cursor:grabbing!important}
+
+/* ---- header ---- */
+header{flex:0 0 auto;background:#1e222d;border-bottom:1px solid #2a2e39;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px}
+.hleft{display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.hleft::-webkit-scrollbar{display:none}
+.hright{display:flex;align-items:center;gap:5px;flex:0 0 auto}
+select.sym{background:#2a2e39;color:#fff;border:1px solid #363a45;border-radius:4px;
+  padding:5px 7px;font-size:12px;font-weight:600;cursor:pointer;outline:none;max-width:170px}
+.dot{width:7px;height:7px;border-radius:50%;background:#089981;display:inline-block;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.tfs{display:flex;gap:3px}
+.tf-btn{background:#2a2e39;color:#cfd3dc;border:1px solid #363a45;padding:5px 8px;border-radius:4px;
+  font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tf-btn:hover{background:#363a45}
+.tf-btn.active-tf{background:#2962ff;border-color:#2962ff;color:#fff}
+.btn{border:1px solid #363a45;background:#2a2e39;color:#e2e5ea;padding:5px 9px;border-radius:4px;
+  font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:#363a45}
+.btn.primary{background:#2962ff;border-color:#2962ff;color:#fff}
+.btn.primary:hover{background:#1e53e0}
+.btn.go{background:#0f8a6f;border-color:#0f8a6f;color:#fff}
+.btn.go:hover{background:#0da07f}
+.icon{padding:5px 7px}
+
+/* ---- chips ---- */
+#chipsBar{flex:0 0 auto;background:#181b24;border-bottom:1px solid #2a2e39;padding:4px 8px;
+  display:flex;align-items:center;gap:5px;overflow-x:auto;scrollbar-width:thin;min-height:30px}
+#chipsBar::-webkit-scrollbar{height:3px}
+#chipsBar::-webkit-scrollbar-thumb{background:#2a2e39;border-radius:2px}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:4px;font-size:11px;
+  padding:2px 4px;white-space:nowrap;border:1px solid transparent}
+.chip-on{background:#1e2a4a;border-color:#2c4a8a;color:#dbe4ff}
+.chip-empty{background:#20242f;border-color:#2a2e39;color:#6b7280;font-style:italic}
+.chip-live{background:#0d3b2e;border-color:#14654d;color:#37d39b}
+.chip-cache{background:#3b3110;border-color:#6b5818;color:#e8c14a}
+.chip-sim{background:#3b1414;border-color:#6b1c1c;color:#ff7a7a}
+.chip-name{background:none;border:none;color:inherit;font:inherit;font-weight:600;cursor:pointer;padding:1px 2px}
+.chip-name:hover{text-decoration:underline}
+.chip-gear,.chip-x{background:none;border:none;color:#9aa4b8;cursor:pointer;font-size:12px;line-height:1;padding:1px 3px}
+.chip-gear:hover{color:#e8c14a}
+.chip-x:hover{color:#ff7a7a}
+
+/* ---- hud strip ---- */
+#hud{flex:0 0 auto;background:#131722;border-bottom:1px solid #2a2e39;padding:4px 8px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+#hSym{color:#fff;font-weight:700}
+#hPrice{font-weight:700}
+.text-emerald-400{color:#089981}
+.text-rose-400{color:#f23645}
+#hud .sep{color:#363a45}
+#hud .lbl{color:#6b7280}
+#hRange{color:#8b93a5;margin-left:auto}
+#verTag{color:#4b5563}
+
+/* ---- chart stack ---- */
+#stack{flex:1 1 auto;position:relative;min-height:0;width:100%;cursor:crosshair;touch-action:none;overflow:hidden}
+#baseCanvas,#ovCanvas{position:absolute;left:0;top:0;display:block}
+#ovCanvas{pointer-events:none;z-index:5}
+
+/* ---- drawer ---- */
+#drawer{flex:0 0 auto;height:210px;background:#1e222d;border-top:1px solid #2a2e39;display:flex;flex-direction:column;z-index:20}
+.dhead{height:30px;background:#181b24;border-bottom:1px solid #2a2e39;display:flex;align-items:center;
+  justify-content:space-between;padding:0 8px;font-size:11px;gap:8px}
+.dhead .t{font-weight:700;color:#7aa2ff}
+.dhead .s{color:#6b7280;font-size:10px}
+.dact{display:flex;align-items:center;gap:5px}
+#edText{flex:1;width:100%;background:#131722;color:#cfd6e4;border:none;outline:none;resize:none;
+  padding:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5}
+.dfoot{height:22px;background:#181b24;border-top:1px solid #2a2e39;display:flex;align-items:center;
+  gap:10px;padding:0 8px;font-size:10px;color:#6b7280;overflow-x:auto;white-space:nowrap}
+.dfoot b{color:#9aa4b8}
+.dfoot code{color:#7aa2ff;background:#131722;padding:0 3px;border-radius:2px}
+
+/* ---- modals ---- */
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(3px);z-index:60;
+  display:flex;align-items:center;justify-content:center;padding:14px}
+.box{background:#1e222d;border:1px solid #2a2e39;border-radius:8px;width:100%;max-width:430px;
+  max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.6)}
+.bhead{height:40px;flex:0 0 auto;background:#181b24;border-bottom:1px solid #2a2e39;display:flex;
+  align-items:center;justify-content:space-between;padding:0 12px;font-weight:700;font-size:13px;color:#fff}
+.bx{background:none;border:none;color:#9aa4b8;font-size:20px;line-height:1;cursor:pointer}
+.bx:hover{color:#fff}
+.bsearch{flex:0 0 auto;padding:8px;border-bottom:1px solid #2a2e39}
+.bsearch input{width:100%;background:#131722;border:1px solid #2a2e39;border-radius:5px;color:#e5e9f0;
+  padding:7px 9px;font-size:12px;outline:none}
+.bsearch input:focus{border-color:#2962ff}
+.bbody{flex:1 1 auto;overflow-y:auto;padding:8px}
+.bbody::-webkit-scrollbar{width:5px}
+.bbody::-webkit-scrollbar-thumb{background:#2a2e39;border-radius:3px}
+.bfoot{flex:0 0 auto;padding:9px;background:#181b24;border-top:1px solid #2a2e39;display:flex;justify-content:flex-end;gap:7px}
+.cat-h{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;
+  padding:9px 4px 5px;font-weight:700}
+.cat-row{width:100%;display:flex;align-items:center;justify-content:space-between;background:#20242f;
+  border:1px solid #2a2e39;border-radius:5px;color:#dfe4ee;padding:8px 10px;margin-bottom:4px;
+  font-size:12px;cursor:pointer;text-align:left}
+.cat-row:hover{background:#26304a;border-color:#2962ff}
+.cat-n{font-weight:600}
+.cat-a{color:#7aa2ff;font-size:11px}
+.cat-empty{color:#6b7280;padding:14px;text-align:center;font-size:12px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 2px}
+.row label{color:#9aa4b8;font-size:12px;flex:0 0 auto}
+.row input[type=number],.row input[type=text]{flex:1 1 auto;min-width:0;background:#131722;border:1px solid #2a2e39;
+  border-radius:4px;color:#fff;padding:6px 8px;font-family:ui-monospace,Menlo,monospace;font-size:12px;outline:none;text-align:right}
+.row input:focus{border-color:#2962ff}
+.row input[type=color]{width:52px;height:30px;background:#131722;border:1px solid #2a2e39;border-radius:4px;cursor:pointer;padding:2px}
+.row-check{display:flex;align-items:center;gap:8px;padding:8px 2px;border-top:1px solid #2a2e39;margin-top:6px;cursor:pointer}
+.row-check span{color:#e5e9f0;font-size:12px;font-weight:600}
+.row-check input{width:16px;height:16px;accent-color:#2962ff;cursor:pointer}
+textarea.expr{width:100%;background:#131722;border:1px solid #2a2e39;border-radius:4px;color:#e5e9f0;
+  font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:7px;outline:none;resize:vertical}
+textarea.expr:focus{border-color:#2962ff}
+.hint{color:#6b7280;font-size:10.5px;line-height:1.55;margin-top:5px;background:#131722;
+  border:1px solid #2a2e39;border-radius:4px;padding:6px 7px}
+.hint b{color:#9aa4b8}
+.hint code{color:#7aa2ff}
+@media (max-width:520px){
+  header{padding:5px 6px;gap:5px}
+  select.sym{max-width:120px;font-size:11px;padding:4px 5px}
+  .tf-btn{padding:4px 6px;font-size:11px}
+  .btn{padding:4px 7px;font-size:11px}
+  .btn .txt{display:none}
+  #hud{font-size:10px;gap:7px;padding:3px 6px}
+  #drawer{height:180px}
+}
+</style>
 </head>
-<body class="flex flex-col h-screen select-none">
+<body>
 
-  <!-- Top Navigation Bar -->
-  <header class="h-11 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-2 sm:px-3 gap-2 shrink-0 z-20">
-    <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll">
-      <!-- Market Selector -->
-      <div class="flex items-center gap-1 font-bold text-white text-xs bg-[#2a2e39] px-2 py-1 rounded">
-        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <select id="marketSelect" class="bg-transparent border-none text-white text-xs font-semibold focus:outline-none cursor-pointer">
-          <option value="XAUUSDT" selected>GOLD (XAU/USDT)</option>
-          <option value="BTCUSDT">BTC/USDT</option>
-          <option value="ETHUSDT">ETH/USDT</option>
-          <option value="SOLUSDT">SOL/USDT</option>
-        </select>
-      </div>
-
-      <!-- Timeframe Buttons -->
-      <div id="tfGroup" class="flex items-center gap-1">
-        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="1m">1m</button>
-        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="3m">3m</button>
-        <button class="tf-btn active-tf text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="5m">5m</button>
-        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="15m">15m</button>
-        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="30m">30m</button>
-        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="1h">1h</button>
-        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="4h">4h</button>
-        <button class="tf-btn text-xs px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-[#363a45] transition" data-tf="1D">1D</button>
-      </div>
+<header>
+  <div class="hleft">
+    <span class="dot" title="live data feed"></span>
+    <select id="symSel" class="sym" title="instrument"></select>
+    <div class="tfs" id="tfGroup">
+      <button class="tf-btn" data-tf="1m">1m</button>
+      <button class="tf-btn" data-tf="3m">3m</button>
+      <button class="tf-btn" data-tf="5m">5m</button>
+      <button class="tf-btn" data-tf="15m">15m</button>
+      <button class="tf-btn" data-tf="30m">30m</button>
+      <button class="tf-btn active-tf" data-tf="1h">1h</button>
+      <button class="tf-btn" data-tf="4h">4h</button>
+      <button class="tf-btn" data-tf="1D">1D</button>
     </div>
+  </div>
+  <div class="hright">
+    <button class="btn icon" id="resetBtn" title="reset zoom &amp; pan (or double-click chart)">⟲</button>
+    <button class="btn" id="catBtn" title="add indicators">＋ <span class="txt">Indicators</span></button>
+    <button class="btn primary" id="edBtn" title="formula / Pine reference">&lt;/&gt; <span class="txt">Formula</span></button>
+  </div>
+</header>
 
-    <!-- Actions: Settings Modal & Pine Editor -->
-    <div class="flex items-center gap-1.5 shrink-0">
-      <!-- Reset View / Fit Button -->
-      <button id="resetViewBtn" title="Reset Chart Zoom & Pan" class="text-xs bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-2 py-1 rounded transition">
-        <i class="fa-solid fa-arrows-rotate text-blue-400"></i>
-      </button>
+<div id="chipsBar"><span id="chips" style="display:contents"></span></div>
 
-      <!-- Indicator Settings Button -->
-      <button id="openSettingsBtn" class="flex items-center gap-1 text-[11px] font-semibold bg-[#2a2e39] hover:bg-[#363a45] text-gray-200 px-2 py-1 rounded transition">
-        <i class="fa-solid fa-sliders text-amber-400"></i>
-        <span class="hidden sm:inline">Settings</span>
-      </button>
+<div id="hud">
+  <span id="hSym">—</span>
+  <span id="hPrice">—</span>
+  <span id="hChg">—</span>
+  <span class="sep">|</span>
+  <span class="chip chip-sim" id="hSrc">—</span>
+  <span class="lbl">updated <span id="hTime">—</span></span>
+  <span id="hRange"></span>
+  <span id="verTag"></span>
+</div>
 
-      <!-- Pine Script Drawer Toggle -->
-      <button id="toggleEditorBtn" class="flex items-center gap-1 text-[11px] font-bold bg-[#2962ff] hover:bg-blue-600 text-white px-2.5 py-1 rounded transition shadow">
-        <i class="fa-solid fa-code"></i>
-        <span>Pine</span>
-      </button>
+<div id="stack">
+  <canvas id="baseCanvas"></canvas>
+  <canvas id="ovCanvas"></canvas>
+</div>
+
+<div id="drawer" class="hidden">
+  <div class="dhead">
+    <div><span class="t">Custom formula</span> <span class="s">— runs in-browser on the real series</span></div>
+    <div class="dact">
+      <a class="btn" href="B2_indicator.pine" target="_blank" rel="noopener" title="open the B2 Pine Script source (for TradingView / Vela)">Pine source ↗</a>
+      <button class="btn" id="edCopy">copy</button>
+      <button class="btn go" id="edApply">plot it</button>
+      <button class="bx" id="edClose" title="close">×</button>
     </div>
-  </header>
-
-  <!-- Main Chart Canvas Area -->
-  <main class="flex-1 flex flex-col relative w-full h-full min-h-0 overflow-hidden cursor-crosshair">
-    
-    <!-- Top Price Chart Canvas -->
-    <div id="mainChartBox" class="flex-1 relative w-full h-full overflow-hidden">
-      <canvas id="candleCanvas" class="absolute inset-0 w-full h-full"></canvas>
-      
-      <!-- Live HUD Status Overlay -->
-      <div class="absolute top-2 left-2 bg-[#1e222d]/85 backdrop-blur border border-[#2a2e39] rounded px-2.5 py-1.5 text-[11px] font-mono pointer-events-none shadow-lg z-10 space-y-0.5">
-        <div class="font-bold text-white flex items-center justify-between gap-4 border-b border-[#2a2e39] pb-0.5">
-          <span id="hudSymbol">XAUUSDT · 5m</span>
-          <span id="hudPrice" class="text-emerald-400">2654.50</span>
-        </div>
-        <div class="flex items-center justify-between gap-4 text-amber-400">
-          <span>VAH:</span> <span id="hudVAH">---</span>
-        </div>
-        <div class="flex items-center justify-between gap-4 text-blue-400">
-          <span>VAL:</span> <span id="hudVAL">---</span>
-        </div>
-        <div class="flex items-center justify-between gap-4 text-gray-400">
-          <span>POC:</span> <span id="hudPOC">---</span>
-        </div>
-        <div class="flex items-center justify-between gap-4">
-          <span class="text-gray-300">DeMarker:</span> <span id="hudDM" class="text-white">---</span>
-        </div>
-        <div class="flex items-center justify-between gap-4">
-          <span class="text-gray-300">Gate:</span> <span id="hudGate" class="text-emerald-400 font-bold">---</span>
-        </div>
-      </div>
-
-      <!-- Drag & Zoom Hint Overlay -->
-      <div class="absolute bottom-2 left-2 text-[10px] text-gray-500 font-mono pointer-events-none z-10 hidden sm:block">
-        Pan: Drag Chart | Zoom: Scroll / Pinch | Double Click: Reset
-      </div>
-    </div>
-
-    <!-- Bottom DeMarker Oscillator Pane -->
-    <div id="oscillatorBox" class="h-28 border-t border-[#2a2e39] bg-[#181b24] relative w-full shrink-0">
-      <canvas id="oscillatorCanvas" class="absolute inset-0 w-full h-full"></canvas>
-      <div class="absolute top-1 left-2 text-[10px] font-mono text-gray-400 pointer-events-none z-10 flex gap-3">
-        <span class="text-blue-400 font-bold">DeMarker(7)</span>
-        <span class="text-amber-400 font-bold">EMA(3) Signal</span>
-        <span class="text-red-400">OB <span id="oscOBText">0.80</span></span>
-        <span class="text-emerald-400">OS <span id="oscOSText">0.20</span></span>
-      </div>
-    </div>
-
-    <!-- Indicator Settings Modal -->
-    <div id="settingsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-      <div class="bg-[#1e222d] border border-[#2a2e39] w-full max-w-sm rounded-lg shadow-2xl overflow-hidden text-xs">
-        <div class="h-10 px-4 bg-[#181b24] border-b border-[#2a2e39] flex items-center justify-between font-bold text-white">
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-sliders text-amber-400"></i> B2 Indicator Settings</span>
-          <button id="closeSettingsBtn" class="text-gray-400 hover:text-white text-base">&times;</button>
-        </div>
-        <div class="p-4 space-y-3">
-          <div>
-            <label class="block text-gray-400 mb-1">DeMarker Length (Bars)</label>
-            <input type="text" inputmode="numeric" id="cfgDmLen" value="7" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
-          </div>
-          <div>
-            <label class="block text-gray-400 mb-1">Signal EMA Length</label>
-            <input type="text" inputmode="numeric" id="cfgSigLen" value="3" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-gray-400 mb-1">Overbought (OB)</label>
-              <input type="text" inputmode="decimal" id="cfgObLvl" value="0.80" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
-            </div>
-            <div>
-              <label class="block text-gray-400 mb-1">Oversold (OS)</label>
-              <input type="text" inputmode="decimal" id="cfgOsLvl" value="0.20" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
-            </div>
-          </div>
-          <div>
-            <label class="block text-gray-400 mb-1">Value Area % (Volume Profile)</label>
-            <input type="text" inputmode="decimal" id="cfgVaPct" value="70" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
-          </div>
-          <div>
-            <label class="block text-gray-400 mb-1">Gate Distance to Edge (%)</label>
-            <input type="text" inputmode="decimal" id="cfgNearPct" value="0.25" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 text-white font-mono">
-          </div>
-          <div class="flex items-center gap-2 pt-2 border-t border-[#2a2e39]">
-            <input type="checkbox" id="cfgShowB2" checked class="accent-blue-500 rounded cursor-pointer">
-            <label for="cfgShowB2" class="text-white cursor-pointer font-semibold">Show VAH / VAL / Signals</label>
-          </div>
-        </div>
-        <div class="p-3 bg-[#181b24] border-t border-[#2a2e39] flex justify-end gap-2">
-          <button id="saveSettingsBtn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded font-semibold transition">
-            Apply Settings
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Pine Script Source Drawer -->
-    <div id="pineDrawer" class="hidden h-56 border-t border-[#2a2e39] bg-[#1e222d] flex flex-col shrink-0 z-30">
-      <div class="h-8 bg-[#181b24] px-3 flex items-center justify-between border-b border-[#2a2e39] text-xs">
-        <div class="flex items-center gap-2">
-          <span class="font-bold text-blue-400">B2_indicator.pine</span>
-          <span class="text-[10px] text-gray-400">(Volume Profile Edge + DeMarker Gate)</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="applyPineBtn" class="px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition">
-            Apply Indicator
-          </button>
-          <button id="copyPineBtn" class="px-2 py-0.5 rounded bg-[#2a2e39] hover:bg-gray-700 text-white text-[11px] transition">
-            Copy
-          </button>
-          <button id="closeDrawerBtn" class="text-gray-400 hover:text-white text-base font-bold">&times;</button>
-        </div>
-      </div>
-      <textarea id="pineText" class="flex-1 w-full p-2 bg-[#131722] text-gray-300 font-mono text-xs focus:outline-none resize-none border-none custom-scroll" spellcheck="false"></textarea>
-    </div>
-  </main>
-
-  <script>
-    // -------------------------------------------------------------
-    // App State, Indicators Configuration & Controls
-    // -------------------------------------------------------------
-    let currentSymbol = 'XAUUSDT';
-    let currentTf = '5m';
-    let candles = [];
-    let b2Data = null;
-
-    // Configurable Parameters
-    let config = {
-      showB2: true,
-      dmLen: 7,
-      sigLen: 3,
-      obLvl: 0.80,
-      osLvl: 0.20,
-      vaPct: 70.0,
-      nearPct: 0.25,
-      bins: 40
-    };
-
-    // Pan & Zoom Interaction State
-    let visibleCount = 60; // How many candles are visible
-    let offsetIndex = 0;   // Pan scroll offset from right
-    let isDragging = false;
-    let dragStartX = 0;
-    let initialOffset = 0;
-    let crosshairPos = null;
-
-    const candleCanvas = document.getElementById('candleCanvas');
-    const oscCanvas = document.getElementById('oscillatorCanvas');
-    const ctxCandle = candleCanvas.getContext('2d');
-    const ctxOsc = oscCanvas.getContext('2d');
-
-    const B2_SOURCE = `//@version=5
-indicator("Gold VP edge + DeMarker (B2) — signals", overlay=true)
-
-// Configurable Settings via GUI
-dmLen  = input.int(7, "DeMarker length")
-sigLen = input.int(3, "signal EMA length")
-osLvl  = input.float(0.20, "oversold")
-obLvl  = input.float(0.80, "overbought")
-vaPct  = input.float(70.0, "value area %")
-nearPct = input.float(0.25, "gate: distance to edge (%)")
-
-// All calculations executed dynamically with interactive pan/zoom`;
-
-    document.getElementById('pineText').value = B2_SOURCE;
-
-    // -------------------------------------------------------------
-    // Realistic Historical Candle Generator
-    // -------------------------------------------------------------
-    function getSeconds(tf) {
-      if (tf === '1m') return 60;
-      if (tf === '3m') return 180;
-      if (tf === '5m') return 300;
-      if (tf === '15m') return 900;
-      if (tf === '30m') return 1800;
-      if (tf === '1h') return 3600;
-      if (tf === '4h') return 14400;
-      if (tf === '1D') return 86400;
-      return 300;
-    }
-
-    function initCandles() {
-      candles = [];
-      const totalCandles = 250;
-      const now = Math.floor(Date.now() / 1000);
-      const step = getSeconds(currentTf);
-      let basePrice = currentSymbol.includes('BTC') ? 60800 : (currentSymbol.includes('ETH') ? 2550 : (currentSymbol.includes('SOL') ? 145 : 2655));
-      let p = basePrice;
-
-      for (let i = totalCandles; i >= 0; i--) {
-        let t = now - (i * step);
-        let delta = (Math.random() - 0.495) * (basePrice * 0.0035);
-        let o = p;
-        let c = p + delta;
-        let h = Math.max(o, c) + Math.random() * (basePrice * 0.002);
-        let l = Math.min(o, c) - Math.random() * (basePrice * 0.002);
-        let v = 20 + Math.random() * 100;
-        candles.push({ time: t, open: o, high: h, low: l, close: c, volume: v });
-        p = c;
-      }
-      offsetIndex = 0;
-    }
-
-    // -------------------------------------------------------------
-    // B2 Indicator Engine: Dynamic Volume Profile + DeMarker
-    // -------------------------------------------------------------
-    function calculateB2() {
-      let dm = [];
-      let sig = [];
-      let signals = [];
-
-      // 1. DeMarker
-      for (let i = 0; i < candles.length; i++) {
-        if (i < 1) { dm.push(0.5); continue; }
-        let dmxSum = 0, dmnSum = 0, cnt = 0;
-        for (let k = Math.max(1, i - config.dmLen + 1); k <= i; k++) {
-          dmxSum += Math.max(candles[k].high - candles[k - 1].high, 0);
-          dmnSum += Math.max(candles[k - 1].low - candles[k].low, 0);
-          cnt++;
-        }
-        let dmx = dmxSum / cnt;
-        let dmn = dmnSum / cnt;
-        let val = (dmx + dmn) > 0 ? (dmx / (dmx + dmn)) : 0.5;
-        dm.push(val);
-      }
-
-      // 2. EMA(3) Signal
-      const alpha = 2 / (config.sigLen + 1);
-      let curEma = dm[0];
-      for (let i = 0; i < dm.length; i++) {
-        if (i === 0) sig.push(curEma);
-        else {
-          curEma = dm[i] * alpha + curEma * (1 - alpha);
-          sig.push(curEma);
-        }
-      }
-
-      // 3. Volume Profile (Value Area Calculation)
-      const lookback = Math.min(candles.length, 120);
-      const vpSlice = candles.slice(candles.length - lookback);
-      let minP = Math.min(...vpSlice.map(c => c.low));
-      let maxP = Math.max(...vpSlice.map(c => c.high));
-      let bw = (maxP - minP) / config.bins;
-      let volBins = new Array(config.bins).fill(0);
-
-      vpSlice.forEach(c => {
-        let b0 = Math.max(0, Math.min(config.bins - 1, Math.floor((c.low - minP) / bw)));
-        let b1 = Math.max(0, Math.min(config.bins - 1, Math.floor((c.high - minP) / bw)));
-        let vEach = c.volume / (b1 - b0 + 1);
-        for (let b = b0; b <= b1; b++) volBins[b] += vEach;
-      });
-
-      let totalV = volBins.reduce((a, b) => a + b, 0);
-      let pocIdx = 0, maxV = -1;
-      volBins.forEach((v, idx) => { if (v > maxV) { maxV = v; pocIdx = idx; } });
-
-      let used = new Array(config.bins).fill(false);
-      used[pocIdx] = true;
-      let accV = volBins[pocIdx];
-      let vLo = pocIdx, vHi = pocIdx;
-      let targetV = totalV * (config.vaPct / 100);
-
-      let guard = 0;
-      while (accV < targetV && guard < config.bins) {
-        let bestIdx = -1, bestV = -1;
-        for (let k = 0; k < config.bins; k++) {
-          if (!used[k] && volBins[k] > bestV) { bestV = volBins[k]; bestIdx = k; }
-        }
-        if (bestIdx < 0) break;
-        used[bestIdx] = true;
-        accV += bestV;
-        vLo = Math.min(vLo, bestIdx);
-        vHi = Math.max(vHi, bestIdx);
-        guard++;
-      }
-
-      const vah = minP + (vHi + 1) * bw;
-      const val = minP + vLo * bw;
-      const poc = minP + (pocIdx + 0.5) * bw;
-
-      // 4. Signals
-      for (let i = 2; i < candles.length; i++) {
-        const c = candles[i];
-        const near = (Math.abs(c.close - val) / c.close < config.nearPct / 100) ||
-                     (Math.abs(c.close - vah) / c.close < config.nearPct / 100);
-
-        if (dm[i] < config.osLvl + 0.05 && dm[i] > dm[i - 1] && near) {
-          signals.push({ index: i, type: 'BUY', price: c.low });
-        } else if (dm[i] > config.obLvl - 0.05 && dm[i] < dm[i - 1] && near) {
-          signals.push({ index: i, type: 'SELL', price: c.high });
-        }
-      }
-
-      return { dm, sig, vah, val, poc, signals };
-    }
-
-    // -------------------------------------------------------------
-    // Interactive Canvas Rendering with Pan & Zoom
-    // -------------------------------------------------------------
-    function resizeCanvases() {
-      const dpr = window.devicePixelRatio || 1;
-      
-      const wMain = document.getElementById('mainChartBox').clientWidth || window.innerWidth;
-      const hMain = document.getElementById('mainChartBox').clientHeight || (window.innerHeight - 160);
-      candleCanvas.width = Math.round(wMain * dpr);
-      candleCanvas.height = Math.round(hMain * dpr);
-      candleCanvas.style.width = wMain + 'px';
-      candleCanvas.style.height = hMain + 'px';
-      ctxCandle.setTransform(1, 0, 0, 1, 0, 0);
-      ctxCandle.scale(dpr, dpr);
-
-      const wOsc = document.getElementById('oscillatorBox').clientWidth || window.innerWidth;
-      const hOsc = document.getElementById('oscillatorBox').clientHeight || 112;
-      oscCanvas.width = Math.round(wOsc * dpr);
-      oscCanvas.height = Math.round(hOsc * dpr);
-      oscCanvas.style.width = wOsc + 'px';
-      oscCanvas.style.height = hOsc + 'px';
-      ctxOsc.setTransform(1, 0, 0, 1, 0, 0);
-      ctxOsc.scale(dpr, dpr);
-
-      render();
-    }
-
-    function render() {
-      const w = document.getElementById('mainChartBox').clientWidth;
-      const h = document.getElementById('mainChartBox').clientHeight;
-      if (w <= 0 || h <= 0) return;
-
-      b2Data = calculateB2();
-
-      // Viewport Slice of Visible Candles
-      const endIdx = candles.length - offsetIndex;
-      const startIdx = Math.max(0, endIdx - visibleCount);
-      const visibleCandles = candles.slice(startIdx, endIdx);
-
-      // Clear Canvas
-      ctxCandle.clearRect(0, 0, w, h);
-      ctxCandle.fillStyle = '#131722';
-      ctxCandle.fillRect(0, 0, w, h);
-
-      // Price Scaling
-      let minPrice = Math.min(...visibleCandles.map(c => c.low));
-      let maxPrice = Math.max(...visibleCandles.map(c => c.high));
-      if (config.showB2) {
-        minPrice = Math.min(minPrice, b2Data.val * 0.999);
-        maxPrice = Math.max(maxPrice, b2Data.vah * 1.001);
-      }
-      const pad = (maxPrice - minPrice) * 0.08;
-      minPrice -= pad;
-      maxPrice += pad;
-
-      const priceToY = p => h - ((p - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15;
-      const yToPrice = y => minPrice + (1 - (y - 15) / (h - 30)) * (maxPrice - minPrice);
-
-      // Grid Lines & Price Labels
-      ctxCandle.strokeStyle = '#1e222d';
-      ctxCandle.lineWidth = 1;
-      const steps = 6;
-      for (let s = 0; s <= steps; s++) {
-        const p = minPrice + (maxPrice - minPrice) * (s / steps);
-        const y = priceToY(p);
-        ctxCandle.beginPath();
-        ctxCandle.moveTo(0, y);
-        ctxCandle.lineTo(w - 55, y);
-        ctxCandle.stroke();
-
-        ctxCandle.fillStyle = '#787b86';
-        ctxCandle.font = '10px monospace';
-        ctxCandle.fillText(p.toFixed(2), w - 50, y + 3);
-      }
-
-      // Draw B2 Indicator Levels (VAH, VAL, POC)
-      if (config.showB2) {
-        // VAH
-        const yVAH = priceToY(b2Data.vah);
-        ctxCandle.strokeStyle = '#ff9800';
-        ctxCandle.lineWidth = 1.5;
-        ctxCandle.setLineDash([5, 3]);
-        ctxCandle.beginPath(); ctxCandle.moveTo(0, yVAH); ctxCandle.lineTo(w - 55, yVAH); ctxCandle.stroke();
-        ctxCandle.fillStyle = '#ff9800'; ctxCandle.fillRect(w - 52, yVAH - 8, 50, 15);
-        ctxCandle.fillStyle = '#000'; ctxCandle.fillText('VAH ' + b2Data.vah.toFixed(1), w - 50, yVAH + 3);
-
-        // VAL
-        const yVAL = priceToY(b2Data.val);
-        ctxCandle.strokeStyle = '#2196f3';
-        ctxCandle.beginPath(); ctxCandle.moveTo(0, yVAL); ctxCandle.lineTo(w - 55, yVAL); ctxCandle.stroke();
-        ctxCandle.fillStyle = '#2196f3'; ctxCandle.fillRect(w - 52, yVAL - 8, 50, 15);
-        ctxCandle.fillStyle = '#fff'; ctxCandle.fillText('VAL ' + b2Data.val.toFixed(1), w - 50, yVAL + 3);
-
-        // POC
-        const yPOC = priceToY(b2Data.poc);
-        ctxCandle.strokeStyle = '#9e9e9e';
-        ctxCandle.setLineDash([2, 2]);
-        ctxCandle.beginPath(); ctxCandle.moveTo(0, yPOC); ctxCandle.lineTo(w - 55, yPOC); ctxCandle.stroke();
-        ctxCandle.setLineDash([]);
-      }
-
-      // Draw Candlesticks
-      const chartWidth = w - 60;
-      const candleW = Math.max(3, (chartWidth / visibleCount) - 2);
-
-      visibleCandles.forEach((c, idx) => {
-        const x = (idx * (chartWidth / visibleCount)) + 5;
-        const yOpen = priceToY(c.open);
-        const yClose = priceToY(c.close);
-        const yHigh = priceToY(c.high);
-        const yLow = priceToY(c.low);
-        const isUp = c.close >= c.open;
-
-        ctxCandle.strokeStyle = isUp ? '#089981' : '#f23645';
-        ctxCandle.fillStyle = isUp ? '#089981' : '#f23645';
-
-        // Wicks
-        ctxCandle.beginPath();
-        ctxCandle.moveTo(x + candleW / 2, yHigh);
-        ctxCandle.lineTo(x + candleW / 2, yLow);
-        ctxCandle.stroke();
-
-        // Body
-        const topY = Math.min(yOpen, yClose);
-        const bodyH = Math.max(2, Math.abs(yClose - yOpen));
-        ctxCandle.fillRect(x, topY, candleW, bodyH);
-      });
-
-      // Draw Signals for visible candles
-      if (config.showB2 && b2Data.signals.length > 0) {
-        b2Data.signals.forEach(sig => {
-          if (sig.index >= startIdx && sig.index < endIdx) {
-            const idx = sig.index - startIdx;
-            const x = (idx * (chartWidth / visibleCount)) + 5 + (candleW / 2);
-            if (sig.type === 'BUY') {
-              const y = priceToY(sig.price) + 16;
-              ctxCandle.fillStyle = '#089981';
-              ctxCandle.beginPath();
-              ctxCandle.moveTo(x, y - 7); ctxCandle.lineTo(x - 5, y); ctxCandle.lineTo(x + 5, y);
-              ctxCandle.fill();
-              ctxCandle.font = 'bold 9px sans-serif';
-              ctxCandle.fillText('L', x - 3, y + 10);
-            } else {
-              const y = priceToY(sig.price) - 16;
-              ctxCandle.fillStyle = '#f23645';
-              ctxCandle.beginPath();
-              ctxCandle.moveTo(x, y + 7); ctxCandle.lineTo(x - 5, y); ctxCandle.lineTo(x + 5, y);
-              ctxCandle.fill();
-              ctxCandle.font = 'bold 9px sans-serif';
-              ctxCandle.fillText('S', x - 3, y - 4);
-            }
-          }
-        });
-      }
-
-      // Draw Crosshair
-      if (crosshairPos && crosshairPos.x < chartWidth && crosshairPos.y < h) {
-        ctxCandle.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-        ctxCandle.lineWidth = 1;
-        ctxCandle.setLineDash([4, 4]);
-
-        // Vert
-        ctxCandle.beginPath(); ctxCandle.moveTo(crosshairPos.x, 0); ctxCandle.lineTo(crosshairPos.x, h); ctxCandle.stroke();
-        // Horz
-        ctxCandle.beginPath(); ctxCandle.moveTo(0, crosshairPos.y); ctxCandle.lineTo(w - 55, crosshairPos.y); ctxCandle.stroke();
-        ctxCandle.setLineDash([]);
-
-        // Hover Price Badge
-        const hoveredPrice = yToPrice(crosshairPos.y);
-        ctxCandle.fillStyle = '#2962ff';
-        ctxCandle.fillRect(w - 53, crosshairPos.y - 8, 52, 16);
-        ctxCandle.fillStyle = '#fff';
-        ctxCandle.font = '10px monospace';
-        ctxCandle.fillText(hoveredPrice.toFixed(2), w - 50, crosshairPos.y + 4);
-      }
-
-      // -----------------------------------------------------------
-      // Render DeMarker Oscillator Pane
-      // -----------------------------------------------------------
-      const wO = document.getElementById('oscillatorBox').clientWidth;
-      const hO = document.getElementById('oscillatorBox').clientHeight;
-
-      ctxOsc.clearRect(0, 0, wO, hO);
-      ctxOsc.fillStyle = '#181b24';
-      ctxOsc.fillRect(0, 0, wO, hO);
-
-      const oscToY = val => hO - (val * (hO - 24)) - 12;
-
-      // OB & OS Levels
-      const yOB = oscToY(config.obLvl);
-      const yOS = oscToY(config.osLvl);
-      ctxOsc.strokeStyle = 'rgba(242, 54, 69, 0.4)';
-      ctxOsc.setLineDash([4, 2]);
-      ctxOsc.beginPath(); ctxOsc.moveTo(0, yOB); ctxOsc.lineTo(wO - 45, yOB); ctxOsc.stroke();
-
-      ctxOsc.strokeStyle = 'rgba(8, 153, 129, 0.4)';
-      ctxOsc.beginPath(); ctxOsc.moveTo(0, yOS); ctxOsc.lineTo(wO - 45, yOS); ctxOsc.stroke();
-      ctxOsc.setLineDash([]);
-
-      // Signal EMA (Orange)
-      ctxOsc.strokeStyle = '#ff9800';
-      ctxOsc.lineWidth = 1.5;
-      ctxOsc.beginPath();
-      visibleCandles.forEach((c, idx) => {
-        const globalIdx = startIdx + idx;
-        const x = (idx * (chartWidth / visibleCount)) + 5 + (candleW / 2);
-        const y = oscToY(b2Data.sig[globalIdx]);
-        if (idx === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
-      });
-      ctxOsc.stroke();
-
-      // DeMarker (Blue)
-      ctxOsc.strokeStyle = '#2962ff';
-      ctxOsc.lineWidth = 2;
-      ctxOsc.beginPath();
-      visibleCandles.forEach((c, idx) => {
-        const globalIdx = startIdx + idx;
-        const x = (idx * (chartWidth / visibleCount)) + 5 + (candleW / 2);
-        const y = oscToY(b2Data.dm[globalIdx]);
-        if (idx === 0) ctxOsc.moveTo(x, y); else ctxOsc.lineTo(x, y);
-      });
-      ctxOsc.stroke();
-
-      // Update Live HUD
-      const last = candles[candles.length - 1];
-      const lastDM = b2Data.dm[b2Data.dm.length - 1];
-      const isNear = (Math.abs(last.close - b2Data.val) / last.close < config.nearPct / 100) ||
-                     (Math.abs(last.close - b2Data.vah) / last.close < config.nearPct / 100);
-
-      document.getElementById('hudSymbol').innerText = `${currentSymbol} · ${currentTf}`;
-      document.getElementById('hudPrice').innerText = last.close.toFixed(2);
-      document.getElementById('hudVAH').innerText = b2Data.vah.toFixed(2);
-      document.getElementById('hudVAL').innerText = b2Data.val.toFixed(2);
-      document.getElementById('hudPOC').innerText = b2Data.poc.toFixed(2);
-      document.getElementById('hudDM').innerText = lastDM.toFixed(3);
-      const gateEl = document.getElementById('hudGate');
-      gateEl.innerText = isNear ? 'EDGE TOUCH (PASS)' : 'NORMAL';
-      gateEl.className = isNear ? 'text-emerald-400 font-bold' : 'text-gray-500 font-normal';
-    }
-
-    // -------------------------------------------------------------
-    // Mouse, Touch & Interactive Pan & Zoom
-    // -------------------------------------------------------------
-    const box = document.getElementById('mainChartBox');
-
-    // Drag to Pan
-    box.addEventListener('mousedown', e => {
-      isDragging = true;
-      dragStartX = e.clientX;
-      initialOffset = offsetIndex;
-    });
-
-    window.addEventListener('mousemove', e => {
-      const rect = box.getBoundingClientRect();
-      crosshairPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-
-      if (isDragging) {
-        const dx = e.clientX - dragStartX;
-        const candlesShift = Math.round(dx / ((box.clientWidth - 60) / visibleCount));
-        offsetIndex = Math.max(0, Math.min(candles.length - visibleCount - 1, initialOffset - candlesShift));
-      }
-      render();
-    });
-
-    window.addEventListener('mouseup', () => { isDragging = false; });
-    box.addEventListener('mouseleave', () => { crosshairPos = null; render(); });
-
-    // Touch Support for Mobile Drag & Pinch-to-zoom
-    let touchStartX = 0, initialPinchDist = 0;
-    box.addEventListener('touchstart', e => {
-      if (e.touches.length === 1) {
-        isDragging = true;
-        touchStartX = e.touches[0].clientX;
-        initialOffset = offsetIndex;
-        const rect = box.getBoundingClientRect();
-        crosshairPos = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
-        render();
-      } else if (e.touches.length === 2) {
-        isDragging = false;
-        initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      }
-    }, { passive: true });
-
-    box.addEventListener('touchmove', e => {
-      if (e.touches.length === 1 && isDragging) {
-        const dx = e.touches[0].clientX - touchStartX;
-        const candlesShift = Math.round(dx / ((box.clientWidth - 60) / visibleCount));
-        offsetIndex = Math.max(0, Math.min(candles.length - visibleCount - 1, initialOffset - candlesShift));
-        const rect = box.getBoundingClientRect();
-        crosshairPos = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
-        render();
-      } else if (e.touches.length === 2 && initialPinchDist > 0) {
-        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const factor = dist / initialPinchDist;
-        if (factor > 1.08) {
-          visibleCount = Math.max(20, visibleCount - 2);
-          initialPinchDist = dist;
-        } else if (factor < 0.92) {
-          visibleCount = Math.min(180, visibleCount + 2);
-          initialPinchDist = dist;
-        }
-        render();
-      }
-    }, { passive: true });
-
-    box.addEventListener('touchend', () => { isDragging = false; initialPinchDist = 0; });
-
-    // Mouse Wheel Zoom
-    box.addEventListener('wheel', e => {
-      e.preventDefault();
-      if (e.deltaY < 0) {
-        // Zoom in
-        visibleCount = Math.max(20, visibleCount - 4);
-      } else {
-        // Zoom out
-        visibleCount = Math.min(180, visibleCount + 4);
-      }
-      render();
-    }, { passive: false });
-
-    // Double Click to Reset View
-    box.addEventListener('dblclick', () => {
-      offsetIndex = 0;
-      visibleCount = 60;
-      render();
-    });
-
-    document.getElementById('resetViewBtn').addEventListener('click', () => {
-      offsetIndex = 0;
-      visibleCount = 60;
-      render();
-    });
-
-    // -------------------------------------------------------------
-    // UI Modal & Configuration Handling
-    // -------------------------------------------------------------
-    const settingsModal = document.getElementById('settingsModal');
-
-    document.getElementById('openSettingsBtn').addEventListener('click', () => {
-      document.getElementById('cfgDmLen').value = config.dmLen;
-      document.getElementById('cfgSigLen').value = config.sigLen;
-      document.getElementById('cfgObLvl').value = config.obLvl;
-      document.getElementById('cfgOsLvl').value = config.osLvl;
-      document.getElementById('cfgVaPct').value = config.vaPct;
-      document.getElementById('cfgNearPct').value = config.nearPct;
-      document.getElementById('cfgShowB2').checked = config.showB2;
-      settingsModal.classList.remove('hidden');
-    });
-
-    document.getElementById('closeSettingsBtn').addEventListener('click', () => {
-      settingsModal.classList.add('hidden');
-    });
-
-    function parseLocaleNumber(val, defaultVal) {
-      if (typeof val !== 'string') return defaultVal;
-      // Convert Persian / Arabic digits to Latin
-      const faDigits = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
-      let clean = val;
-      faDigits.forEach((d, idx) => {
-        clean = clean.split(d).join(idx.toString());
-      });
-      clean = clean.replace(/٫/g, '.').replace(/,/g, '.');
-      const res = parseFloat(clean);
-      return isNaN(res) ? defaultVal : res;
-    }
-
-    document.getElementById('saveSettingsBtn').addEventListener('click', () => {
-      config.dmLen = Math.round(parseLocaleNumber(document.getElementById('cfgDmLen').value, 7));
-      config.sigLen = Math.round(parseLocaleNumber(document.getElementById('cfgSigLen').value, 3));
-      config.obLvl = parseLocaleNumber(document.getElementById('cfgObLvl').value, 0.80);
-      config.osLvl = parseLocaleNumber(document.getElementById('cfgOsLvl').value, 0.20);
-      config.vaPct = parseLocaleNumber(document.getElementById('cfgVaPct').value, 70.0);
-      config.nearPct = parseLocaleNumber(document.getElementById('cfgNearPct').value, 0.25);
-      config.showB2 = document.getElementById('cfgShowB2').checked;
-
-      document.getElementById('oscOBText').innerText = config.obLvl.toFixed(2);
-      document.getElementById('oscOSText').innerText = config.osLvl.toFixed(2);
-
-      settingsModal.classList.add('hidden');
-      render();
-    });
-
-    // Timeframe Buttons
-    document.querySelectorAll('#tfGroup .tf-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#tfGroup .tf-btn').forEach(b => b.classList.remove('active-tf'));
-        btn.classList.add('active-tf');
-        currentTf = btn.getAttribute('data-tf');
-        initCandles();
-        render();
-      });
-    });
-
-    // Market Selector
-    document.getElementById('marketSelect').addEventListener('change', e => {
-      currentSymbol = e.target.value;
-      initCandles();
-      render();
-    });
-
-    // Pine Drawer
-    const drawer = document.getElementById('pineDrawer');
-    document.getElementById('toggleEditorBtn').addEventListener('click', () => {
-      drawer.classList.toggle('hidden');
-      resizeCanvases();
-    });
-    document.getElementById('closeDrawerBtn').addEventListener('click', () => {
-      drawer.classList.add('hidden');
-      resizeCanvases();
-    });
-    document.getElementById('applyPineBtn').addEventListener('click', () => {
-      config.showB2 = true;
-      render();
-      drawer.classList.add('hidden');
-      resizeCanvases();
-    });
-    document.getElementById('copyPineBtn').addEventListener('click', () => {
-      const txt = document.getElementById('pineText');
-      txt.select();
-      navigator.clipboard.writeText(txt.value);
-      const btn = document.getElementById('copyPineBtn');
-      btn.innerText = 'Copied!';
-      setTimeout(() => btn.innerText = 'Copy', 2000);
-    });
-
-    // -------------------------------------------------------------
-    // Lifecycle Init
-    // -------------------------------------------------------------
-    window.addEventListener('resize', resizeCanvases);
-    window.addEventListener('load', () => {
-      initCandles();
-      resizeCanvases();
-    });
-    initCandles();
-    setTimeout(resizeCanvases, 50);
-    setTimeout(resizeCanvases, 250);
-
-    // Live Candlestick Simulation Tick every 2.5s
-    setInterval(() => {
-      const last = candles[candles.length - 1];
-      const change = (Math.random() - 0.49) * (last.close * 0.001);
-      last.close += change;
-      last.high = Math.max(last.high, last.close);
-      last.low = Math.min(last.low, last.close);
-      render();
-    }, 2500);
-  </script>
+  </div>
+  <textarea id="edText" spellcheck="false"></textarea>
+  <div class="dfoot">
+    <span>this bar: <b>close</b> <b>high</b> <b>low</b> <b>open</b> <b>volume</b> <b>hl2</b> <b>atr</b></span>
+    <span>history: <code>close[1]</code></span>
+    <span>functions use <b>$</b>: <code>ema($close,21)</code> <code>sma</code> <code>rsi</code> <code>stdev</code> <code>hh</code> <code>ll</code> <code>shift</code></span>
+    <span>mix with <code>at()</code>: <code>close &gt; at(ema($close,21)) ? 1 : 0</code></span>
+    <span>math: <code>(close - close[1]) / close[1] * 100</code></span>
+    <span id="edMsg"></span>
+  </div>
+</div>
+
+<!-- catalogue -->
+<div class="mask hidden" id="catModal">
+  <div class="box">
+    <div class="bhead"><span>Indicators</span><button class="bx" id="catClose">×</button></div>
+    <div class="bsearch"><input id="catSearch" type="text" placeholder="search indicator…" autocomplete="off"></div>
+    <div class="bbody" id="catBody"></div>
+  </div>
+</div>
+
+<!-- parameters -->
+<div class="mask hidden" id="paramModal">
+  <div class="box">
+    <div class="bhead"><span id="modTitle">Parameters</span><button class="bx" id="modClose">×</button></div>
+    <div class="bbody" id="modBody"></div>
+    <div class="bfoot"><button class="btn go" id="modSave">Apply</button></div>
+  </div>
+</div>
+
+<script src="app.js?v=3.1.0"></script>
 </body>
 </html>
