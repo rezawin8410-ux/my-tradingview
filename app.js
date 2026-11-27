@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.6.0';
+var VERSION = '3.7.0';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -1628,6 +1628,11 @@ var state = {
   uid: 1,
   hover: null,
   drag: null,
+  /* manual windows: null = auto-fit. *_For records which symbol|frame the window
+     belongs to, so it can never be painted over a different instrument. */
+  priceWin: null, priceWinFor: null,
+  oscWin: null, oscWinFor: null,
+  chrome: { legend: true, names: true, hud: true, tools: true, ui: true },
   computed: null,
   geo: null,
   busy: false,
@@ -1644,6 +1649,93 @@ function paneCount(which) {
   var n = 0;
   state.active.forEach(function (a) { var d = DEFS[a.def]; if (d && d.pane === which) n++; });
   return n;
+}
+
+/* ═══════════════ free navigation (pure maths, no DOM) ═══════════════
+   Mirrors TradingView's model:
+     time  — drag pans, wheel/pinch zooms ANCHORED AT THE CURSOR (the bar you
+             point at stays under the pointer instead of sliding away)
+     price — drag the right axis to pan, wheel over it to zoom about the price
+             under the cursor; both switch off auto-fit until you reset
+   Every function is pure and clamped, so the gate can prove the behaviour
+   without a browser and no gesture can fly the chart into empty space. */
+
+var MIN_BARS = 10, MAX_BARS = 1500;
+var SPAN_MIN_MULT = 0.02, SPAN_MAX_MULT = 60;   /* window span vs data span */
+var DRIFT_MAX_MULT = 8;                          /* how far off the data you may pan */
+
+function clampNum(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+/* zoom the visible bar count about the bar under x.
+   factor < 1 = zoom in (fewer bars, wider candles). */
+function zoomTimeAt(vis0, off0, len, x, plotW, factor) {
+  if (!(len > 0) || !(plotW > 0) || !(factor > 0)) return { visible: vis0, offset: off0 };
+  var V0 = clampNum(Math.round(vis0), 1, len);
+  var end0 = len - off0;
+  var start0 = end0 - V0;
+  var idx0 = clampNum(Math.floor(x / (plotW / V0)), 0, V0 - 1);
+  var g = start0 + idx0;                       /* global bar index under the cursor */
+  var V1 = clampNum(Math.round(V0 * factor), Math.min(MIN_BARS, len), Math.min(MAX_BARS, len));
+  /* Discrete, not fractional: the anchor bar has to occupy the SAME pixel slot
+     at the new density. A continuous fraction pushed the newest bar outside the
+     exclusive [start,end) window when the cursor sat on the right edge. */
+  var idx1 = clampNum(Math.floor(x / (plotW / V1)), 0, V1 - 1);
+  var start1 = g - idx1;
+  var off1 = clampNum(len - (start1 + V1), 0, Math.max(0, len - V1));
+  return { visible: V1, offset: off1 };
+}
+
+/* a value window {lo,hi}; null means "auto-fit" */
+function winSpan(w) { return w ? w.hi - w.lo : 0; }
+
+function clampWin(w, dataLo, dataHi) {
+  if (!w) return null;
+  if (!(dataHi > dataLo)) return null;
+  var dSpan = dataHi - dataLo;
+  var span = w.hi - w.lo;
+  if (!(span > 0)) return null;
+  span = clampNum(span, dSpan * SPAN_MIN_MULT, dSpan * SPAN_MAX_MULT);
+  var lo = w.lo, hi = lo + span;
+  /* allow drifting off the data, but not into infinity */
+  var loLimit = dataLo - dSpan * DRIFT_MAX_MULT;
+  var hiLimit = dataHi + dSpan * DRIFT_MAX_MULT;
+  if (lo < loLimit) { lo = loLimit; hi = lo + span; }
+  if (hi > hiLimit) { hi = hiLimit; lo = hi - span; }
+  return { lo: lo, hi: hi };
+}
+
+/* pan a window by a pixel delta. dy>0 = pointer moved DOWN → content follows it
+   down → higher values come into view at the top, so the window rises. */
+function panWin(w, dy, paneH, dataLo, dataHi) {
+  if (!w || !(paneH > 0)) return w || null;
+  var d = (dy / paneH) * (w.hi - w.lo);
+  return clampWin({ lo: w.lo + d, hi: w.hi + d }, dataLo, dataHi);
+}
+
+/* zoom a window about the value under the cursor's y */
+function zoomWinAt(w, y, paneTop, paneH, factor, dataLo, dataHi) {
+  if (!w || !(paneH > 0) || !(factor > 0)) return w || null;
+  var anchor = w.lo + (1 - clampNum((y - paneTop) / paneH, 0, 1)) * (w.hi - w.lo);
+  var span = (w.hi - w.lo) * factor;
+  var frac = (w.hi - anchor) / (w.hi - w.lo);          /* headroom above the anchor */
+  var hi = anchor + span * clampNum(frac, 0.02, 0.98);
+  return clampWin({ lo: hi - span, hi: hi }, dataLo, dataHi);
+}
+
+/* manual window wins while it belongs to the data actually on screen */
+function navIntent() { return intentKey(state.symbol, state.tf); }
+
+function resolveWin(manual, manualFor, intent, autoLo, autoHi) {
+  if (manual && manualFor === intent) return manual;
+  return { lo: autoLo, hi: autoHi };
+}
+
+/* which pane is a y coordinate inside — decides what a gesture acts on */
+function paneAt(geo, y) {
+  if (!geo) return 'price';
+  if (geo.volH && y >= geo.volTop && y < geo.oscTop) return 'vol';
+  if (geo.oscH && y >= geo.oscTop && y < geo.axisTop) return 'osc';
+  return 'price';
 }
 
 function computeGeo() {
@@ -1724,23 +1816,33 @@ function barX(geo, v, idx) { return idx * stepW(geo, v) + 1; }
 function barW(geo, v) { return Math.max(1, stepW(geo, v) - 2); }
 
 /* ---------------- Scales ---------------- */
-function priceScale(geo, v, comps) {
-  var lo = Infinity, hi = -Infinity, i;
+/* the data range the price pane actually has to show — the reference every
+   manual window is clamped against */
+function priceDataRange(v, comps) {
+  var lo = Infinity, hi = -Infinity, k, i;
   for (i = 0; i < v.slice.length; i++) { lo = Math.min(lo, v.slice[i].low); hi = Math.max(hi, v.slice[i].high); }
   comps.forEach(function (c) {
     if (c.pane !== 'price') return;
     (c.r.series || []).forEach(function (s) {
-      for (var k = v.start; k < v.end; k++) if (s.data[k] != null) { lo = Math.min(lo, s.data[k]); hi = Math.max(hi, s.data[k]); }
+      for (k = v.start; k < v.end; k++) if (s.data[k] != null) { lo = Math.min(lo, s.data[k]); hi = Math.max(hi, s.data[k]); }
     });
     (c.r.levels || []).forEach(function (L) { if (L.price != null) { lo = Math.min(lo, L.price); hi = Math.max(hi, L.price); } });
   });
-  if (!isFinite(lo) || !isFinite(hi) || hi <= lo) { lo = 0; hi = 1; }
-  var padv = (hi - lo) * 0.08;
-  lo -= padv; hi += padv;
+  if (!isFinite(lo) || !isFinite(hi) || hi <= lo) return null;
+  return { lo: lo, hi: hi };
+}
+
+function priceScale(geo, v, comps) {
+  var d = priceDataRange(v, comps);
+  if (!d) d = { lo: 0, hi: 1 };
+  var padv = (d.hi - d.lo) * 0.08;
+  var auto = { lo: d.lo - padv, hi: d.hi + padv };
+  var w = resolveWin(state.priceWin, state.priceWinFor, navIntent(), auto.lo, auto.hi);
+  var manual = !!(state.priceWin && state.priceWinFor === navIntent());
   return {
-    lo: lo, hi: hi,
-    toY: function (p) { return geo.priceTop + geo.priceH - ((p - lo) / (hi - lo)) * geo.priceH; },
-    toP: function (y) { return lo + (1 - (y - geo.priceTop) / geo.priceH) * (hi - lo); }
+    lo: w.lo, hi: w.hi, manual: manual, dataLo: d.lo, dataHi: d.hi,
+    toY: function (p) { return geo.priceTop + geo.priceH - ((p - w.lo) / (w.hi - w.lo)) * geo.priceH; },
+    toP: function (y) { return w.lo + (1 - (y - geo.priceTop) / geo.priceH) * (w.hi - w.lo); }
   };
 }
 
@@ -1758,18 +1860,27 @@ function oscScale(geo, comps, v) {
   var items = comps.filter(function (c) { return c.pane === 'osc'; });
   if (!items.length) return null;
   var fixed = items[0].scale;
-  if (fixed === '0-1') return { lo: 0, hi: 1, toY: function (p) { return geo.oscTop + geo.oscH - p * geo.oscH; } };
-  if (fixed === '0-100') return { lo: 0, hi: 100, toY: function (p) { return geo.oscTop + geo.oscH - (p / 100) * geo.oscH; } };
-  var lo = Infinity, hi = -Infinity;
+  /* a bounded oscillator (0-1, 0-100, -100..0) has a meaningful full range, so
+     manual zoom is refused rather than silently clipping the scale */
+  if (fixed === '0-1') return { lo: 0, hi: 1, fixed: true, toY: function (p) { return geo.oscTop + geo.oscH - p * geo.oscH; } };
+  if (fixed === '0-100') return { lo: 0, hi: 100, fixed: true, toY: function (p) { return geo.oscTop + geo.oscH - (p / 100) * geo.oscH; } };
+  if (fixed === '-100-0') return { lo: -100, hi: 0, fixed: true, toY: function (p) { return geo.oscTop + geo.oscH - ((p + 100) / 100) * geo.oscH; } };
+  if (fixed === '-100-100') return { lo: -100, hi: 100, fixed: true, toY: function (p) { return geo.oscTop + geo.oscH - ((p + 100) / 200) * geo.oscH; } };
+  var lo = Infinity, hi = -Infinity, k;
   items.forEach(function (c) {
     (c.r.series || []).forEach(function (s) {
-      for (var k = v.start; k < v.end; k++) if (s.data[k] != null) { lo = Math.min(lo, s.data[k]); hi = Math.max(hi, s.data[k]); }
+      for (k = v.start; k < v.end; k++) if (s.data[k] != null) { lo = Math.min(lo, s.data[k]); hi = Math.max(hi, s.data[k]); }
     });
   });
   if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
   if (hi === lo) { hi += 1; lo -= 1; }
-  var pd = (hi - lo) * 0.12; lo -= pd; hi += pd;
-  return { lo: lo, hi: hi, toY: function (p) { return geo.oscTop + geo.oscH - ((p - lo) / (hi - lo)) * geo.oscH; } };
+  var pd = (hi - lo) * 0.12;
+  var auto = { lo: lo - pd, hi: hi + pd };
+  var w = resolveWin(state.oscWin, state.oscWinFor, navIntent(), auto.lo, auto.hi);
+  return {
+    lo: w.lo, hi: w.hi, dataLo: lo, dataHi: hi, manual: !!(state.oscWin && state.oscWinFor === navIntent()),
+    toY: function (p) { return geo.oscTop + geo.oscH - ((p - w.lo) / (w.hi - w.lo)) * geo.oscH; }
+  };
 }
 
 /* ---------------- Formatting ---------------- */
@@ -2025,6 +2136,7 @@ function drawBase() {
   }
 
   drawLegends(geo, v, ps, geo.volH ? vs : null, os);
+  drawVitalTag(geo, v, ps);
 }
 
 function drawLine(ctx, s, geo, v, toY) {
@@ -2083,18 +2195,53 @@ function lastOf(arr, v) {
 /* One legend row per indicator, inside its own pane, in that pane's units.
    Previously vol/osc were skipped outright, so Volume and every oscillator
    showed no values at all. */
+/* The one thing that must never be hideable: which instrument this is, its
+   price, and whether the data is real. Hiding chrome is for a clean screenshot,
+   not for fooling yourself about the feed. */
+function drawVitalTag(geo, v, ps) {
+  var ctx = baseCtx;
+  if (!ctx || !geo || !geo.W) return;
+  if (state.chrome.ui && state.chrome.hud) return;   /* the HUD strip already says it */
+  if (!state.candles.length || !dataMatches()) return;
+  var last = state.candles[state.candles.length - 1];
+  var Sy = SYMBOLS[state.symbol] || {};
+  var tag = (Sy.label || state.symbol) + '  ' + fmt(last.close) + '  ' + feedWord();
+  ctx.font = '11px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  var w = ctx.measureText(tag).width + 14;
+  var x = Math.max(4, geo.plotW - w - 4), y = geo.priceTop + 12;
+  ctx.fillStyle = 'rgba(19,23,34,0.9)';
+  ctx.fillRect(x, y - 9, w, 18);
+  ctx.fillStyle = state.source === 'live' ? '#37d39b' : (state.source === 'sim' ? '#ff7a7a' : '#e8c14a');
+  ctx.fillText(tag, x + w - 7, y);
+  ctx.textAlign = 'left';
+}
+
+/* one word for the feed, shared by the tag and the hidden-UI state */
+function feedWord() {
+  if (!dataMatches()) return 'LOADING';
+  if (state.source === 'live') return 'LIVE';
+  if (state.source === 'cached') return 'CACHED';
+  if (state.source === 'stale') return 'STALE';
+  return 'SIMULATED';
+}
+
 function drawLegends(geo, v, ps, vs, os) {
+  if (!state.chrome.legend) return;      /* whole legend off */
   var ctx = baseCtx, rows = [];
   ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
 
   function paneRow(which, top) {
     var y = top + 12;
+    var showNames = state.chrome.names;
     state.computed.forEach(function (c) {
       if (c.pane !== which) return;
       var fmt = which === 'price' ? fmtAxis
               : which === 'vol' ? fmtVol
               : function (x) { return x == null ? '—' : x.toFixed(3); };
-      var bits = [{ t: c.title, col: '#f0f3fa', bold: true }];
+      /* names off → values only; the row still tells you what the numbers are
+         by colour, and the series labels stay because they ARE the values */
+      var bits = showNames ? [{ t: c.title, col: '#f0f3fa', bold: true }] : [];
       (c.r.series || []).forEach(function (s) {
         var lv = lastOf(s.data, v);
         bits.push({ t: s.title + ' ' + (lv == null ? '—' : fmt(lv)), col: s.color || '#d1d4dc' });
@@ -2648,6 +2795,9 @@ function applyData(candles, mode, provider, wantSym, wantTf, note) {
      ever be rendered from a different selection than the one on screen */
   state.dataSym = wantSym;
   state.dataTf = wantTf;
+  /* a manual window fitted to another instrument or frame is meaningless here */
+  if (state.priceWinFor !== wantSym + '|' + wantTf) { state.priceWin = null; state.priceWinFor = null; }
+  if (state.oscWinFor !== wantSym + '|' + wantTf) { state.oscWin = null; state.oscWinFor = null; }
   /* MTF bars belong to a symbol, so a symbol switch invalidates them */
   if (state.symbolLoadedFor !== wantSym) { resetMtf(); state.symbolLoadedFor = wantSym; }
   state.source = mode;
@@ -2818,6 +2968,7 @@ function edMsg(m, ok) {
 function updateHud() {
   var cs = state.candles;
   if (!els.hSym) return;                 /* headless / pre-boot: nothing to write */
+  if (!state.chrome.hud) { heartbeat(); return; }   /* hidden: keep the dot logic, skip the text */
   var Sy = SYMBOLS[state.symbol];
   var name = (Sy ? Sy.label : state.symbol) + ' · ' + state.tf + (Sy && Sy.noVolume ? ' · no volume' : '');
 
@@ -3099,6 +3250,7 @@ function closeModal() { els.paramModal.classList.add('hidden'); }
 function savePrefs() {
   lsSet('prefs3', {
     symbol: state.symbol, tf: state.tf, visible: state.visible,
+    chrome: state.chrome,
     active: state.active.map(function (a) { return { def: a.def, params: a.params, title: a.title }; })
   });
 }
@@ -3108,6 +3260,11 @@ function loadPrefs() {
   if (SYMBOLS[p.symbol]) state.symbol = p.symbol;
   if (TFS[p.tf] && supportedTfs(SYMBOLS[state.symbol]).indexOf(p.tf) >= 0) state.tf = p.tf;
   if (p.visible) state.visible = p.visible;
+  if (p.chrome) {
+    CHROME_KEYS.forEach(function (k) {
+      if (typeof p.chrome[k] === 'boolean') state.chrome[k] = p.chrome[k];
+    });
+  }
   if (p.active && p.active.length) {
     p.active.forEach(function (a) {
       if (!DEFS[a.def]) return;
@@ -3133,6 +3290,95 @@ function loadPrefs() {
 }
 
 /* ---------------- Interaction ---------------- */
+/* ═══════════════ chrome visibility ═══════════════
+   Four independent layers plus a master. Applied by toggling classes on the
+   document element so CSS owns the layout; the canvas re-measures afterwards,
+   because hiding the header changes the chart height and therefore the geometry. */
+var CHROME_KEYS = ['legend', 'names', 'hud', 'tools', 'ui'];
+
+function applyChrome(reflow) {
+  var c = state.chrome;
+  var root = document.documentElement;
+  if (root) {
+    root.setAttribute('data-ui', c.ui ? 'on' : 'off');
+    root.setAttribute('data-hud', c.hud ? 'on' : 'off');
+    root.setAttribute('data-tools', c.tools ? 'on' : 'off');
+  }
+  if (els.hudStrip) els.hudStrip.classList.toggle('hidden', !c.hud);
+  if (els.chipsBar) els.chipsBar.classList.toggle('hidden', !c.legend);
+  if (els.header) els.header.classList.toggle('hidden', !c.ui || !c.tools);
+  if (els.showUiBtn) els.showUiBtn.classList.toggle('hidden', c.ui);
+  if (els.uiBtn) {
+    els.uiBtn.textContent = c.ui ? '◱ <span class="txt">Hide UI</span>' : '◲ <span class="txt">Show UI</span>';
+    els.uiBtn.title = c.ui
+      ? 'hide every control and label (Alt+H) — the instrument, price and feed tag stay'
+      : 'bring the controls back (Alt+H)';
+  }
+  if (reflow) {
+    /* geometry depends on the chrome, so it has to be recomputed, not just repainted */
+    state.geo = computeGeo();
+    sizeCanvases();
+  } else {
+    scheduleBase();
+  }
+  savePrefs();
+}
+
+function toggleChrome(key) {
+  if (CHROME_KEYS.indexOf(key) < 0) return;
+  state.chrome[key] = !state.chrome[key];
+  applyChrome(key === 'ui' || key === 'tools' || key === 'hud');
+}
+function openChromeSheet() {
+  if (!els.chromeSheet) return;
+  renderChromeSheet();
+  els.chromeSheet.classList.remove('hidden');
+}
+function closeChromeSheet() {
+  if (els.chromeSheet) els.chromeSheet.classList.add('hidden');
+}
+/* every layer as an independent switch, with the keyboard equivalent shown */
+var CHROME_ROWS = [
+  { key: 'legend', label: 'Indicator legends', hint: 'Alt+L — the whole label block' },
+  { key: 'names', label: 'Indicator names', hint: 'Alt+N — keep values, drop the titles' },
+  { key: 'hud', label: 'Status strip', hint: 'Alt+U — symbol, price, feed, poll counter' },
+  { key: 'tools', label: 'Toolbar buttons', hint: 'Alt+T — instrument, timeframes, buttons' },
+  { key: 'ui', label: 'All controls', hint: 'Alt+H — chart only; the price/feed tag stays' }
+];
+function renderChromeSheet() {
+  if (!els.chromeBody) return;
+  els.chromeBody.innerHTML = '';
+  CHROME_ROWS.forEach(function (r) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cat-row' + (state.chrome[r.key] ? '' : ' off');
+    b.innerHTML = '<span class="cat-n">' + r.label + '</span><span class="cat-a">' +
+      (state.chrome[r.key] ? 'shown' : 'hidden') + '</span>';
+    b.title = r.hint;
+    b.addEventListener('click', function () {
+      toggleChrome(r.key);
+      renderChromeSheet();
+    });
+    els.chromeBody.appendChild(b);
+    var h = document.createElement('div');
+    h.className = 'chrome-hint';
+    h.textContent = r.hint;
+    els.chromeBody.appendChild(h);
+  });
+  var foot = document.createElement('div');
+  foot.className = 'hint';
+  foot.innerHTML = 'Keyboard: <b>Alt+H</b> all · <b>Alt+L</b> legend · <b>Alt+N</b> names · <b>Alt+U</b> status · <b>Alt+T</b> toolbar · <b>0</b> reset view · <b>+ / -</b> zoom time';
+  els.chromeBody.appendChild(foot);
+}
+/* keyboard zoom keeps the right edge anchored, which is what you expect from a
+   hotkey (there is no cursor to anchor on) */
+function zoomTimeKeys(factor) {
+  if (!state.candles.length || !state.geo) return;
+  var z = zoomTimeAt(state.visible, state.offset, state.candles.length, state.geo.plotW - 1, state.geo.plotW, factor);
+  state.visible = z.visible; state.offset = z.offset;
+  scheduleBase(); updateHud(); savePrefs();
+}
+
 function bindEvents() {
   var stack = els.stack;
 
@@ -3141,33 +3387,85 @@ function bindEvents() {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
+  /* which axis strip the pointer is over — decides whether a gesture moves time
+     or price, and gives the cursor a visual affordance */
+  function onPriceAxis(p) { return !!state.geo && p.x >= state.geo.plotW; }
+
   stack.addEventListener('mousedown', function (e) {
-    state.drag = { x: e.clientX, off: state.offset };
-    stack.classList.add('grabbing');
+    var p = pos(e);
+    if (onPriceAxis(p)) {
+      var pane = paneAt(state.geo, p.y);
+      if (pane === 'vol') return;                     /* volume stays proportional */
+      if (pane === 'osc' && state.scales && state.scales.os && state.scales.os.fixed) return;
+      state.drag = { mode: pane === 'osc' ? 'oscPan' : 'pricePan', y: e.clientY, x: p.x, pane: pane };
+      stack.classList.add('grabbing-v');
+    } else {
+      state.drag = { mode: 'time', x: e.clientX, off: state.offset };
+      stack.classList.add('grabbing');
+    }
+    e.preventDefault();
   });
+
   window.addEventListener('mousemove', function (e) {
     var p = pos(e);
     state.hover = p;
-    if (state.drag && state.geo) {
-      var v = view();
-      var per = state.geo.plotW / Math.max(1, v.n);
-      var d = Math.round((e.clientX - state.drag.x) / per);
-      var maxOff = Math.max(0, state.candles.length - state.visible - 1);
-      var no = Math.max(0, Math.min(maxOff, state.drag.off + d));
-      if (no !== state.offset) { state.offset = no; scheduleBase(); updateHud(); }
+    var d = state.drag;
+    if (d && state.geo && state.scales) {
+      if (d.mode === 'time') {
+        var v = view();
+        var per = state.geo.plotW / Math.max(1, v.n);
+        var bars = Math.round((e.clientX - d.x) / per);
+        var maxOff = Math.max(0, state.candles.length - state.visible - 1);
+        var no = clampNum(d.off + bars, 0, maxOff);
+        if (no !== state.offset) { state.offset = no; scheduleBase(); updateHud(); }
+      } else if (d.mode === 'pricePan' && state.scales.ps) {
+        var sc = state.scales.ps;
+        state.priceWin = panWin({ lo: sc.lo, hi: sc.hi }, e.clientY - d.y, state.geo.priceH, sc.dataLo, sc.dataHi);
+        state.priceWinFor = navIntent();
+        d.y = e.clientY;
+        scheduleBase(); updateHud();
+      } else if (d.mode === 'oscPan' && state.scales.os && !state.scales.os.fixed) {
+        var oc = state.scales.os;
+        state.oscWin = panWin({ lo: oc.lo, hi: oc.hi }, e.clientY - d.y, state.geo.oscH, oc.dataLo, oc.dataHi);
+        state.oscWinFor = navIntent();
+        d.y = e.clientY;
+        scheduleBase(); updateHud();
+      }
+    } else if (state.geo) {
+      /* affordance: the axis strip is draggable, so show it */
+      stack.style.cursor = onPriceAxis(p) ? 'ns-resize' : 'crosshair';
     }
     scheduleOverlay();
   });
-  window.addEventListener('mouseup', function () { state.drag = null; stack.classList.remove('grabbing'); });
+
+  window.addEventListener('mouseup', function () {
+    state.drag = null;
+    stack.classList.remove('grabbing');
+    stack.classList.remove('grabbing-v');
+  });
   stack.addEventListener('mouseleave', function () { state.hover = null; scheduleOverlay(); });
 
   stack.addEventListener('wheel', function (e) {
     e.preventDefault();
-    var nv = e.deltaY < 0 ? state.visible - 5 : state.visible + 5;
-    nv = Math.max(15, Math.min(state.candles.length, nv));
-    if (nv !== state.visible) {
-      state.visible = nv;
-      state.offset = Math.min(state.offset, Math.max(0, state.candles.length - nv - 1));
+    var p = pos(e);
+    var f = e.deltaY < 0 ? 0.85 : 1.18;   /* <1 = zoom in */
+    if (onPriceAxis(p) && state.geo && state.scales) {
+      var pane = paneAt(state.geo, p.y);
+      if (pane === 'osc' && state.scales.os && !state.scales.os.fixed) {
+        var oc = state.scales.os;
+        state.oscWin = zoomWinAt({ lo: oc.lo, hi: oc.hi }, p.y, state.geo.oscTop, state.geo.oscH, f, oc.dataLo, oc.dataHi);
+        state.oscWinFor = navIntent();
+      } else if (pane !== 'vol') {
+        var sc = state.scales.ps;
+        state.priceWin = zoomWinAt({ lo: sc.lo, hi: sc.hi }, p.y, state.geo.priceTop, state.geo.priceH, f, sc.dataLo, sc.dataHi);
+        state.priceWinFor = navIntent();
+      }
+      scheduleBase(); updateHud();
+      return;
+    }
+    var z = zoomTimeAt(state.visible, state.offset, state.candles.length, p.x, state.geo ? state.geo.plotW : 0, f);
+    if (z.visible !== state.visible || z.offset !== state.offset) {
+      state.visible = z.visible; state.offset = z.offset;
       scheduleBase(); updateHud(); savePrefs();
     }
   }, { passive: false });
@@ -3175,33 +3473,69 @@ function bindEvents() {
   stack.addEventListener('dblclick', resetView);
 
   /* touch */
-  var tStart = 0, tOff = 0, pinch = 0;
+  var tStart = 0, tOff = 0, tY = 0, tMode = '', pinch = 0, pinchX = 0;
+  function relTouch(t) {
+    var r = stack.getBoundingClientRect();
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
   stack.addEventListener('touchstart', function (e) {
-    if (e.touches.length === 1) { tStart = e.touches[0].clientX; tOff = state.offset; }
-    else if (e.touches.length === 2) { pinch = dist2(e.touches); tStart = 0; }
+    var t = e.touches[0], p = relTouch(t);
+    if (e.touches.length === 1) {
+      tStart = t.clientX; tY = t.clientY; tOff = state.offset;
+      /* a vertical drag started on the axis strip pans price, exactly like the mouse */
+      tMode = (state.geo && p.x >= state.geo.plotW) ? 'pricePan' : 'time';
+    } else if (e.touches.length === 2) {
+      pinch = dist2(e.touches); tMode = 'pinch'; tStart = 0;
+      var r = stack.getBoundingClientRect();
+      pinchX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - r.left;
+    }
   }, { passive: true });
   stack.addEventListener('touchmove', function (e) {
-    if (e.touches.length === 1 && tStart && state.geo) {
-      var v = view();
-      var per = state.geo.plotW / Math.max(1, v.n);
-      var d = Math.round((e.touches[0].clientX - tStart) / per);
-      var maxOff = Math.max(0, state.candles.length - state.visible - 1);
-      state.offset = Math.max(0, Math.min(maxOff, tOff + d));
-      var r = stack.getBoundingClientRect();
-      state.hover = { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+    if (e.touches.length === 1 && state.geo) {
+      var p = relTouch(e.touches[0]);
+      state.hover = p;
+      if (tMode === 'pricePan' && state.scales && state.scales.ps) {
+        state.priceWin = panWin({ lo: state.scales.ps.lo, hi: state.scales.ps.hi }, e.touches[0].clientY - tY, state.geo.priceH, state.scales.ps.dataLo, state.scales.ps.dataHi);
+        state.priceWinFor = navIntent();
+        tY = e.touches[0].clientY;
+      } else if (tMode === 'time') {
+        var v = view();
+        var per = state.geo.plotW / Math.max(1, v.n);
+        var d = Math.round((e.touches[0].clientX - tStart) / per);
+        state.offset = clampNum(tOff + d, 0, Math.max(0, state.candles.length - state.visible - 1));
+        tStart = e.touches[0].clientX; tOff = state.offset;
+      }
       scheduleBase(); scheduleOverlay(); updateHud();
     } else if (e.touches.length === 2 && pinch) {
       var nd = dist2(e.touches);
       var f = nd / pinch;
-      if (f > 1.06) { state.visible = Math.max(15, state.visible - 4); pinch = nd; }
-      else if (f < 0.94) { state.visible = Math.min(state.candles.length, state.visible + 4); pinch = nd; }
-      scheduleBase(); updateHud();
+      if (f > 1.04 || f < 0.96) {
+        var z = zoomTimeAt(state.visible, state.offset, state.candles.length, pinchX, state.geo ? state.geo.plotW : 0, 1 / f);
+        state.visible = z.visible; state.offset = z.offset;
+        pinch = nd;
+        scheduleBase(); updateHud();
+      }
     }
     e.preventDefault();
   }, { passive: false });
-  stack.addEventListener('touchend', function () { tStart = 0; pinch = 0; state.hover = null; scheduleOverlay(); savePrefs(); }, { passive: true });
+  stack.addEventListener('touchend', function () { tStart = 0; tMode = ''; pinch = 0; state.hover = null; scheduleOverlay(); savePrefs(); }, { passive: true });
 
   function dist2(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+
+  /* TradingView's own shortcuts, so hiding the UI is reversible without a mouse */
+  window.addEventListener('keydown', function (e) {
+    var tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.altKey) {
+      var k = e.key.toLowerCase();
+      var map = { h: 'ui', l: 'legend', n: 'names', u: 'hud', t: 'tools' };
+      if (map[k]) { e.preventDefault(); toggleChrome(map[k]); }
+      return;
+    }
+    if (e.key === '0') { e.preventDefault(); resetView(); return; }
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomTimeKeys(0.85); return; }
+    if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomTimeKeys(1.18); }
+  });
 
   window.addEventListener('resize', sizeCanvases);
   window.addEventListener('orientationchange', function () { setTimeout(sizeCanvases, 250); });
@@ -3252,6 +3586,11 @@ function bindEvents() {
     });
   }
   els.reset.addEventListener('click', resetView);
+  if (els.uiBtn) els.uiBtn.addEventListener('click', function () { toggleChrome('ui'); });
+  if (els.showUiBtn) els.showUiBtn.addEventListener('click', function () { toggleChrome('ui'); });
+  if (els.chromeBtn) els.chromeBtn.addEventListener('click', openChromeSheet);
+  if (els.chromeSheet) els.chromeSheet.addEventListener('click', function (e) { if (e.target === els.chromeSheet) closeChromeSheet(); });
+  if (els.chromeClose) els.chromeClose.addEventListener('click', closeChromeSheet);
   els.catBtn.addEventListener('click', function () { openCatalogue(''); });
   els.catClose.addEventListener('click', closeCat);
   els.catSearch.addEventListener('input', function (e) { openCatalogue(e.target.value); });
@@ -3288,7 +3627,10 @@ function bindEvents() {
 }
 
 function resetView() {
+  /* back to TradingView's default: newest bars in view, both axes auto-scaled */
   state.offset = 0; state.visible = 70;
+  state.priceWin = null; state.priceWinFor = null;
+  state.oscWin = null; state.oscWinFor = null;
   scheduleBase(); updateHud(); savePrefs();
 }
 
@@ -3316,7 +3658,16 @@ function boot() {
   els.reset = document.getElementById('resetBtn');
   els.catBtn = document.getElementById('catBtn');
   els.liveDot = document.getElementById('liveDot');
+  els.header = document.querySelector('header');
+  els.hudStrip = document.getElementById('hud');
+  els.chipsBar = document.getElementById('chipsBar');
+  els.uiBtn = document.getElementById('uiBtn');
+  els.showUiBtn = document.getElementById('showUiBtn');
   els.hNext = document.getElementById('hNext');
+  els.chromeBtn = document.getElementById('chromeBtn');
+  els.chromeSheet = document.getElementById('chromeSheet');
+  els.chromeBody = document.getElementById('chromeBody');
+  els.chromeClose = document.getElementById('chromeClose');
   els.catModal = document.getElementById('catModal');
   els.catBody = document.getElementById('catBody');
   els.catSearch = document.getElementById('catSearch');
