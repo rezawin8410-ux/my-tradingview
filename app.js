@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.1.0';
+var VERSION = '3.3.0';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -146,6 +146,232 @@ function crossUp(a, b) {
   var out = [], i;
   for (i = 0; i < a.length; i++) out.push(i > 0 && a[i] != null && b[i] != null && a[i - 1] != null && b[i - 1] != null && a[i - 1] <= b[i - 1] && a[i] > b[i]);
   return out;
+}
+
+/* median bar spacing in seconds — derived from the data itself, so hour-based
+   windows survive a provider that returns irregular or gap-filled bars */
+function barSeconds(cs) {
+  if (!cs || cs.length < 3) return 0;
+  var gaps = [], i;
+  for (i = 1; i < cs.length; i++) {
+    var g = cs[i].time - cs[i - 1].time;
+    if (g > 0) gaps.push(g);
+  }
+  if (!gaps.length) return 0;
+  gaps.sort(function (a, b) { return a - b; });
+  return gaps[Math.floor(gaps.length / 2)];
+}
+
+/* ================= Multi-timeframe resolution =================
+   Pine's request.security(sym, tf, expr, lookahead=barmerge.lookahead_on)
+   maps another timeframe's series onto the chart bars. The alignment rule
+   differs by direction and getting it wrong silently repaints the future,
+   so it is implemented once, here, and reused by every MTF indicator:
+
+     srcSec >  chartSec (higher TF) : chart bar t takes the value of the HTF
+        bar whose OPEN is floor(t/srcSec)*srcSec. lookahead_on means that bar's
+        FINAL value is used for every chart bar inside it — including bars
+        before it closed. That is the documented repaint of lookahead_on and
+        we reproduce it deliberately, because the Pine does.
+     srcSec == chartSec            : exact time match.
+     srcSec <  chartSec (lower TF) : Pine can only hand back the LT bar that
+        starts at the chart bar's open. Anything else would be invented.
+
+   Values are never interpolated and never carried forward across a gap:
+   a chart bar with no source bar stays null. */
+
+var GATE_IVL = [[60, '1m'], [180, '3m'], [300, '5m'], [900, '15m'],
+                [1800, '30m'], [3600, '1h'], [14400, '4h'], [86400, '1d']];
+
+function gateIntervalFor(sec) {
+  var i;
+  for (i = 0; i < GATE_IVL.length; i++) if (GATE_IVL[i][0] === sec) return GATE_IVL[i][1];
+  return null;
+}
+
+/* Pine timeframe literal -> seconds. Bare number = minutes ("1"=60, "60"=3600). */
+function tfToSec(str) {
+  var s = String(str == null ? '' : str).trim();
+  if (!s) return 0;
+  var m = s.match(/^(\d+)([mhdwMHDW]?)$/);
+  if (m) {
+    var n = parseInt(m[1], 10), u = (m[2] || 'm').toLowerCase();
+    return n * (u === 'm' ? 60 : u === 'h' ? 3600 : u === 'd' ? 86400 : 604800);
+  }
+  var w = s.toUpperCase();
+  if (w === 'D') return 86400;
+  if (w === 'W') return 604800;
+  if (w === 'M') return 2592000;
+  return 0;
+}
+
+function indexByTime(cs) {
+  var map = {}, i;
+  for (i = 0; i < cs.length; i++) map[cs[i].time] = i;
+  return map;
+}
+
+/* src = { cs, byTime, sec } as built by fetchMtf; vals = per-source-bar array */
+function toChartSeries(src, vals, chartCs) {
+  var out = new Array(chartCs.length), i;
+  for (i = 0; i < chartCs.length; i++) out[i] = null;
+  if (!src || !src.cs || !src.cs.length) return out;
+  var srcSec = src.sec;
+  if (!srcSec) return out;
+  var chartSecV = barSeconds(chartCs);
+  if (!chartSecV) return out;
+
+  if (Math.abs(srcSec - chartSecV) < 1) {
+    for (i = 0; i < chartCs.length; i++) {
+      var k = src.byTime[chartCs[i].time];
+      out[i] = (k == null) ? null : (vals[k] == null ? null : vals[k]);
+    }
+    return out;
+  }
+  if (srcSec > chartSecV) {
+    for (i = 0; i < chartCs.length; i++) {
+      var open = Math.floor(chartCs[i].time / srcSec) * srcSec;
+      var kk = src.byTime[open];
+      out[i] = (kk == null) ? null : (vals[kk] == null ? null : vals[kk]);
+    }
+    return out;
+  }
+  /* lower timeframe: only the bar aligned with the chart bar's open exists */
+  for (i = 0; i < chartCs.length; i++) {
+    var kl = src.byTime[chartCs[i].time];
+    out[i] = (kl == null) ? null : (vals[kl] == null ? null : vals[kl]);
+  }
+  return out;
+}
+
+var mtfStore = {};        /* sec -> { cs, byTime, sec, provider } */
+var mtfPending = {};      /* sec -> 1 while in flight */
+var mtfError = {};        /* sec -> reason string */
+
+function resetMtf() { mtfStore = {}; mtfPending = {}; mtfError = {}; }
+
+function fetchMtf(sec) {
+  var S = SYMBOLS[state.symbol];
+  var ivl = gateIntervalFor(sec);
+  if (!S || !S.gate) return Promise.reject(new Error('no exchange pair for ' + state.symbol));
+  if (!ivl) return Promise.reject(new Error('interval ' + sec + 's not offered'));
+  var url = 'https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=' + S.gate +
+            '&interval=' + ivl + '&limit=1000';
+  return fetch(url, { headers: { Accept: 'application/json' } }).then(function (r) {
+    if (!r.ok) throw new Error('http ' + r.status);
+    return r.json();
+  }).then(function (arr) {
+    if (!Array.isArray(arr) || arr.length < 10) throw new Error('empty');
+    var cs = sanitize(parseGateRows(arr));
+    if (cs.length < 10) throw new Error('only ' + cs.length + ' bars');
+    var secV = barSeconds(cs);
+    mtfStore[secV || sec] = { cs: cs, byTime: indexByTime(cs), sec: secV || sec, provider: 'gate' };
+    delete mtfError[sec];
+    return mtfStore[secV || sec];
+  });
+}
+
+function neededMtfSecs() {
+  var set = {}, chartSecV = barSeconds(state.candles) || (TFS[state.tf] && TFS[state.tf].sec);
+  state.active.forEach(function (a) {
+    var d = DEFS[a.def];
+    if (!d || !d.needsMtf) return;
+    d.needsMtf(a.params).forEach(function (sec) {
+      if (sec && sec !== chartSecV) set[sec] = 1;
+    });
+  });
+  return Object.keys(set).map(Number);
+}
+
+function ensureMtf() {
+  if (!state.candles.length) return;
+  var secs = neededMtfSecs();
+  var fired = 0;
+  secs.forEach(function (sec) {
+    if (mtfStore[sec] || mtfPending[sec]) return;
+    mtfPending[sec] = 1; fired++;
+    fetchMtf(sec).then(function () {
+      delete mtfPending[sec];
+      redrawAll();
+    }, function (e) {
+      delete mtfPending[sec];
+      mtfError[sec] = ((e && e.message) || e) + '';
+      redrawAll();
+    });
+  });
+  return fired;
+}
+
+/* ta.pivotlow / ta.pivothigh, faithful to Pine: the pivot is the bar
+   `right` bars back, and it is reported on the CURRENT bar i. Ties count as
+   pivots (Pine compares against ta.lowest/ta.highest of the window). */
+function pivotFlags(arr, left, right, isHigh) {
+  var n = arr.length, flags = new Array(n), i, j;
+  for (i = 0; i < n; i++) flags[i] = false;
+  for (i = left + right; i < n; i++) {
+    var c = i - right, v = arr[c];
+    if (v == null || !isFinite(v)) continue;
+    var okAll = true;
+    for (j = c - left; j <= c + right; j++) {
+      if (j < 0 || j >= n) { okAll = false; break; }
+      var x = arr[j];
+      if (x == null || !isFinite(x)) { okAll = false; break; }
+      if (isHigh ? (x > v + 1e-12) : (x < v - 1e-12)) { okAll = false; break; }
+    }
+    if (okAll) flags[i] = true;
+  }
+  return flags;
+}
+
+/* The four divergence branches of DeMarker Pro, transcribed bar for bar.
+   Order matters: Pine tests regular-bull, regular-bear, hidden-bull,
+   hidden-bear in sequence and each consumed branch clears the state var,
+   so a bar that fires regular cannot also fire hidden on the same pivot. */
+function divergences(dm, hi, lo, vo, volAvg, p, osLvl, obLvl) {
+  var n = dm.length, lines = [], i;
+  var pl = pivotFlags(lo, p.divLookback, p.divLookback, false);
+  var ph = pivotFlags(hi, p.divLookback, p.divLookback, true);
+  var lp = null, ld = null, lb = null;   /* last low pivot: price, dm, bar */
+  var hp = null, hd = null, hb = null;   /* last high pivot */
+
+  for (i = 0; i < n; i++) {
+    if (pl[i]) { var c1 = i - p.divLookback; lp = lo[c1]; ld = dm[c1]; lb = c1; }
+    if (ph[i]) { var c2 = i - p.divLookback; hp = hi[c2]; hd = dm[c2]; hb = c2; }
+
+    var volOk = !p.volFilter || (vo[i] != null && volAvg != null && volAvg[i] != null && vo[i] >= volAvg[i]);
+    var d = dm[i], a = lo[i], b = hi[i];
+    if (d == null || a == null || b == null) continue;
+
+    /* regular bullish: lower low in price, higher low in DeMarker, both oversold */
+    if (lp != null && (i - lb) >= p.minBarDist) {
+      if (Math.abs(a - lp) >= p.minPriceMove && a < lp && d > ld && d < osLvl && ld < osLvl && volOk) {
+        lines.push({ i1: lb, y1: ld, i2: i, y2: d, color: p.bullDivColor, width: p.divLineWidth, dotted: false });
+        lp = null; ld = null; lb = null;
+      }
+    }
+    /* regular bearish: higher high in price, lower high in DeMarker, both overbought */
+    if (hp != null && (i - hb) >= p.minBarDist) {
+      if (Math.abs(b - hp) >= p.minPriceMove && b > hp && d < hd && d > obLvl && hd > obLvl && volOk) {
+        lines.push({ i1: hb, y1: hd, i2: i, y2: d, color: p.bearDivColor, width: p.divLineWidth, dotted: false });
+        hp = null; hd = null; hb = null;
+      }
+    }
+    /* hidden bullish: higher low in price, lower low in DeMarker */
+    if (lp != null && (i - lb) >= p.minBarDist) {
+      if (a > lp && d < ld && d < osLvl && ld < osLvl && volOk) {
+        lines.push({ i1: lb, y1: ld, i2: i, y2: d, color: p.hiddenDivColor, width: p.divLineWidth, dotted: true });
+        lp = null; ld = null; lb = null;
+      }
+    }
+    /* hidden bearish: lower high in price, higher high in DeMarker */
+    if (hp != null && (i - hb) >= p.minBarDist) {
+      if (b < hp && d > hd && d > obLvl && hd > obLvl && volOk) {
+        lines.push({ i1: hb, y1: hd, i2: i, y2: d, color: p.hiddenDivColor, width: p.divLineWidth, dotted: true });
+        hp = null; hd = null; hb = null;
+      }
+    }
+  }
+  return lines;
 }
 
 /* ---------------- Volume profile core (shared by B2) ---------------- */
@@ -334,10 +560,17 @@ var DEFS = {
       };
     }
   },
+  /* Faithful port of B2_indicator.pine: TWO rolling volume profiles measured in
+     HOURS (winH1=24h, winH2=4h), not in bars. The gate fires when price is within
+     nearPct of ANY of the four edges, exactly as the Pine does with
+     `show2 ? (near(val1) or near(vah1) or near(val2) or near(vah2)) : …`.
+     Windows are converted to bar counts from the candles' own spacing, so the
+     real span is 24h on 5m and on 1D alike. */
   b2: {
     name: 'B2 — VP Edge + DeMarker gate', pane: 'price',
     params: [
-      { k: 'lookback', l: 'Profile lookback (bars)', t: 'int', d: 120, min: 20, max: 500 },
+      { k: 'winH1', l: 'Profile 1 window (hours)', t: 'float', d: 24, min: 1, max: 240, step: 1 },
+      { k: 'winH2', l: 'Profile 2 window (hours)', t: 'float', d: 4, min: 0, max: 240, step: 1 },
       { k: 'bins', l: 'Price bins', t: 'int', d: 50, min: 10, max: 200 },
       { k: 'vaPct', l: 'Value area %', t: 'float', d: 70, min: 50, max: 95 },
       { k: 'dmLen', l: 'DeMarker length', t: 'int', d: 7, min: 2, max: 100 },
@@ -345,26 +578,182 @@ var DEFS = {
       { k: 'ob', l: 'Overbought', t: 'float', d: 0.8, min: 0.5, max: 0.99, step: 0.01 },
       { k: 'os', l: 'Oversold', t: 'float', d: 0.2, min: 0.01, max: 0.5, step: 0.01 },
       { k: 'nearPct', l: 'Gate distance %', t: 'float', d: 0.25, min: 0.05, max: 2, step: 0.05 },
+      { k: 'show2', l: 'Use profile 2 (4h) too', t: 'bool', d: true },
       { k: 'showLevels', l: 'Draw VAH/VAL/POC', t: 'bool', d: true }
     ],
     compute: function (C, p, cs) {
-      var vp = volumeProfile(cs, p.lookback, p.bins, p.vaPct);
-      var dm = demarker(cs, p.dmLen), sg = ema(dm, p.sigLen);
-      var res = { series: [], levels: [], markers: [] };
-      if (vp && p.showLevels) {
-        res.levels.push({ price: vp.vah, color: '#ff9800', title: 'VAH', tag: true });
-        res.levels.push({ price: vp.val, color: '#2196f3', title: 'VAL', tag: true });
-        res.levels.push({ price: vp.poc, color: '#9e9e9e', title: 'POC' });
-        var gate = p.nearPct / 100;
-        for (var i = 2; i < cs.length; i++) {
-          var c = cs[i];
-          var near = Math.abs(c.close - vp.val) / c.close < gate || Math.abs(c.close - vp.vah) / c.close < gate;
-          if (!near) continue;
-          if (dm[i] != null && dm[i] < p.os + 0.05 && dm[i] > dm[i - 1]) res.markers.push({ i: i, kind: 'buy', price: c.low, text: 'L' });
-          else if (dm[i] != null && dm[i] > p.ob - 0.05 && dm[i] < dm[i - 1]) res.markers.push({ i: i, kind: 'sell', price: c.high, text: 'S' });
-        }
-        res.vp = vp;
+      var barSec = barSeconds(cs);
+      var res = { series: [], levels: [], markers: [], lines: [], edges: [], notes: [], meta: {} };
+      if (!barSec || cs.length < 10) return res;
+
+      var n1 = Math.round(p.winH1 * 3600 / barSec);
+      var n2 = Math.round(p.winH2 * 3600 / barSec);
+      /* Pine: `if win < 30 or bar_index < win + 1 -> [na, na, na]`. A window narrower
+         than 30 bars has no meaningful value area, and a window wider than the loaded
+         history is not silently shrunk — both produce NO profile. On 1D this means the
+         24h window is 1 bar, so the real Pine draws nothing there either. */
+      var vp1 = (n1 >= 30 && cs.length > n1) ? volumeProfile(cs, n1, p.bins, p.vaPct) : null;
+      var vp2 = (p.show2 && p.winH2 > 0 && n2 >= 30 && cs.length > n2) ? volumeProfile(cs, n2, p.bins, p.vaPct) : null;
+      if (n1 < 30) res.notes.push('24h window = ' + n1 + ' bar(s) < 30 → no profile (same as the Pine)');
+      else if (cs.length <= n1) res.notes.push('need ' + (n1 + 1) + ' bars for the 24h window, have ' + cs.length + ' → no profile');
+      if (p.show2 && p.winH2 > 0 && n2 < 30) res.notes.push('4h window = ' + n2 + ' bar(s) < 30 → no profile');
+
+      res.meta.barSec = barSec;
+      res.meta.n1 = n1;
+      res.meta.n2 = n2;
+      res.meta.clamped1 = n1 > cs.length;
+      res.meta.clamped2 = vp2 ? res.meta.n2 > cs.length : false;
+
+      if (vp1 && p.showLevels) {
+        res.levels.push({ price: vp1.vah, color: '#ff9800', title: 'VAH ' + p.winH1 + 'h', tag: true });
+        res.levels.push({ price: vp1.val, color: '#2196f3', title: 'VAL ' + p.winH1 + 'h', tag: true });
+        res.levels.push({ price: vp1.poc, color: '#9e9e9e', title: 'POC' });
+        res.edges.push(vp1.vah, vp1.val);
       }
+      if (vp2 && p.showLevels) {
+        res.levels.push({ price: vp2.vah, color: 'rgba(255,152,0,0.55)', title: 'VAH ' + p.winH2 + 'h' });
+        res.levels.push({ price: vp2.val, color: 'rgba(33,150,243,0.55)', title: 'VAL ' + p.winH2 + 'h' });
+        res.edges.push(vp2.vah, vp2.val);
+      }
+      res.vp = vp1; res.vp2 = vp2;
+
+      if (!res.edges.length) return res;
+
+      var dm = demarker(cs, p.dmLen);
+      var gate = p.nearPct / 100;
+      for (var i = 2; i < cs.length; i++) {
+        var c = cs[i], near = false, e;
+        for (e = 0; e < res.edges.length; e++) {
+          if (Math.abs(c.close - res.edges[e]) / c.close < gate) { near = true; break; }
+        }
+        if (!near) continue;
+        if (dm[i] != null && dm[i] < p.os + 0.05 && dm[i] > dm[i - 1]) res.markers.push({ i: i, kind: 'buy', price: c.low, text: 'L' });
+        else if (dm[i] != null && dm[i] > p.ob - 0.05 && dm[i] < dm[i - 1]) res.markers.push({ i: i, kind: 'sell', price: c.high, text: 'S' });
+      }
+      return res;
+    }
+  },
+
+  /* Verbatim port of DeMarker_Pro_Scalping.pine (16,871 bytes, md5 21c96acc1de9808907b2b2a624074cea — shipped next to this file).
+     Three DeMarker instances, each computed on ITS OWN timeframe inside
+     request.security(..., lookahead_on) and then mapped onto the chart bars;
+     four divergence kinds per instance off ta.pivotlow/pivothigh; optional
+     volume filter; and the confluence label, which Pine keeps singular
+     (label.delete on every new one) — reproduced via keepHistory. */
+  dmpro: {
+    name: 'DeMarker Pro (scalping · multi-TF · divergence)', pane: 'osc', scale: '0-1',
+    needsMtf: function (p) {
+      var out = [];
+      [1, 2, 3].forEach(function (k) {
+        if (p['enable' + k]) { var sec = tfToSec(p['tf' + k]); if (sec) out.push(sec); }
+      });
+      return out;
+    },
+    params: [
+      { k: 'enable1', l: 'DeMarker 1 — active', t: 'bool', d: true },
+      { k: 'tf1', l: 'DeMarker 1 — timeframe (Pine literal)', t: 'text', d: '1' },
+      { k: 'len1', l: 'DeMarker 1 — period', t: 'int', d: 7, min: 1, max: 100 },
+      { k: 'col1', l: 'DeMarker 1 — colour', t: 'color', d: '#2962ff' },
+      { k: 'showSig1', l: 'DeMarker 1 — signal line', t: 'bool', d: true },
+      { k: 'sigLen1', l: 'DeMarker 1 — signal length', t: 'int', d: 3, min: 1, max: 50 },
+      { k: 'sigWidth1', l: 'DeMarker 1 — signal width', t: 'int', d: 1, min: 1, max: 4 },
+      { k: 'showDiv1', l: 'DeMarker 1 — divergence', t: 'bool', d: true },
+      { k: 'enable2', l: 'DeMarker 2 — active', t: 'bool', d: true },
+      { k: 'tf2', l: 'DeMarker 2 — timeframe (Pine literal)', t: 'text', d: '5' },
+      { k: 'len2', l: 'DeMarker 2 — period', t: 'int', d: 14, min: 1, max: 100 },
+      { k: 'col2', l: 'DeMarker 2 — colour', t: 'color', d: '#ff9800' },
+      { k: 'showSig2', l: 'DeMarker 2 — signal line', t: 'bool', d: true },
+      { k: 'sigLen2', l: 'DeMarker 2 — signal length', t: 'int', d: 5, min: 1, max: 50 },
+      { k: 'sigWidth2', l: 'DeMarker 2 — signal width', t: 'int', d: 1, min: 1, max: 4 },
+      { k: 'showDiv2', l: 'DeMarker 2 — divergence', t: 'bool', d: true },
+      { k: 'enable3', l: 'DeMarker 3 — active', t: 'bool', d: false },
+      { k: 'tf3', l: 'DeMarker 3 — timeframe (Pine literal)', t: 'text', d: '15' },
+      { k: 'len3', l: 'DeMarker 3 — period', t: 'int', d: 21, min: 1, max: 100 },
+      { k: 'col3', l: 'DeMarker 3 — colour', t: 'color', d: '#9c27b0' },
+      { k: 'showSig3', l: 'DeMarker 3 — signal line', t: 'bool', d: false },
+      { k: 'sigLen3', l: 'DeMarker 3 — signal length', t: 'int', d: 5, min: 1, max: 50 },
+      { k: 'sigWidth3', l: 'DeMarker 3 — signal width', t: 'int', d: 1, min: 1, max: 4 },
+      { k: 'showDiv3', l: 'DeMarker 3 — divergence', t: 'bool', d: false },
+      { k: 'obLevel', l: 'Overbought', t: 'float', d: 0.8, min: 0.5, max: 0.99, step: 0.01 },
+      { k: 'osLevel', l: 'Oversold', t: 'float', d: 0.2, min: 0.01, max: 0.5, step: 0.01 },
+      { k: 'volFilter', l: 'Volume filter', t: 'bool', d: true },
+      { k: 'volAvgLen', l: 'Volume MA length', t: 'int', d: 20, min: 5, max: 200 },
+      { k: 'divLookback', l: 'Divergence pivot lookback', t: 'int', d: 25, min: 10, max: 60 },
+      { k: 'minBarDist', l: 'Min bars between pivot and signal', t: 'int', d: 4, min: 2, max: 60 },
+      { k: 'minPriceMove', l: 'Min price move', t: 'float', d: 0.0001, min: 0, max: 1000, step: 0.0001 },
+      { k: 'bullDivColor', l: 'Regular bull divergence colour', t: 'color', d: '#089981' },
+      { k: 'bearDivColor', l: 'Regular bear divergence colour', t: 'color', d: '#f23645' },
+      { k: 'hiddenDivColor', l: 'Hidden divergence colour', t: 'color', d: '#ffeb3b' },
+      { k: 'divLineWidth', l: 'Divergence line width', t: 'int', d: 1, min: 1, max: 3 },
+      { k: 'showConfluence', l: 'Confluence signal', t: 'bool', d: true },
+      { k: 'keepHistory', l: 'Keep every confluence (Pine keeps only the last)', t: 'bool', d: false },
+      { k: 'midLine', l: 'Draw 0.5 midline', t: 'bool', d: true }
+    ],
+    compute: function (C, p, cs) {
+      var res = { series: [], levels: [], markers: [], lines: [], notes: [] };
+      var chartSecV = barSeconds(cs);
+      var vols = cs.map(function (c) { return c.volume; });
+      var volAvg = p.volFilter ? sma(vols, p.volAvgLen) : null;
+      var dms = {};
+      var slots = 0;
+
+      [1, 2, 3].forEach(function (k) {
+        if (!p['enable' + k]) return;
+        var wantSec = tfToSec(p['tf' + k]);
+        var src = null, how = 'chart';
+        if (!wantSec) { res.notes.push('DeMarker ' + k + ': timeframe \'' + p['tf' + k] + '\' unreadable'); return; }
+        if (Math.abs(wantSec - chartSecV) < 1) { src = { cs: cs, byTime: indexByTime(cs), sec: chartSecV }; }
+        else { src = mtfStore[wantSec]; how = 'MTF'; }
+        if (!src || !src.cs) {
+          res.notes.push('DeMarker ' + k + ' @ ' + (wantSec / 60) + 'm: no data' +
+            (mtfPending[wantSec] ? ' (loading…)' : (mtfError[wantSec] ? ' — ' + mtfError[wantSec] : ' — unavailable on this feed')));
+          return;
+        }
+        var srcDm = demarker(src.cs, p['len' + k]);
+        var dm = toChartSeries(src, srcDm, cs);
+        var hi = toChartSeries(src, src.cs.map(function (c) { return c.high; }), cs);
+        var lo = toChartSeries(src, src.cs.map(function (c) { return c.low; }), cs);
+        var vo = toChartSeries(src, src.cs.map(function (c) { return c.volume; }), cs);
+        var tag = 'DM' + k + ' ' + (wantSec / 60) + 'm/' + p['len' + k] + (how === 'MTF' ? '' : '*');
+        res.series.push({ title: tag, data: dm, color: p['col' + k], width: 2 });
+        dms[k] = dm;
+        if (p['showSig' + k]) {
+          res.series.push({ title: 'sig' + k, data: ema(dm, p['sigLen' + k]), color: p['col' + k], width: p['sigWidth' + k], alpha: 50 });
+        }
+        if (p['showDiv' + k]) {
+          var L = divergences(dm, hi, lo, vo, volAvg, p, p.osLevel, p.obLevel);
+          res.lines = res.lines.concat(L);
+          res.notes.push('DM' + k + ': ' + L.length + ' divergence(s)');
+        }
+        slots++;
+      });
+
+      res.levels.push({ price: p.obLevel, color: 'rgba(242,54,69,0.6)', title: 'OB' });
+      res.levels.push({ price: p.osLevel, color: 'rgba(8,153,129,0.6)', title: 'OS' });
+      if (p.midLine) res.levels.push({ price: 0.5, color: 'rgba(120,123,134,0.5)', dotted: true, title: 'Mid' });
+
+      /* confluence: DM1 and DM2 both oversold and both above their signal, or both
+         overbought and both below their signal. Pine needs enable1 AND enable2. */
+      if (p.showConfluence && dms[1] && dms[2]) {
+        var s1 = ema(dms[1], p.sigLen1), s2 = ema(dms[2], p.sigLen2);
+        var hits = [], i;
+        for (i = 0; i < cs.length; i++) {
+          var a = dms[1][i], b = dms[2][i], x = s1[i], y = s2[i];
+          if (a == null || b == null || x == null || y == null) continue;
+          var bull = a < p.osLevel && b < p.osLevel && a > x && b > y;
+          var bear = a > p.obLevel && b > p.obLevel && a < x && b < y;
+          if (bull || bear) hits.push({ i: i, bull: bull });
+        }
+        var shown = p.keepHistory ? hits : (hits.length ? [hits[hits.length - 1]] : []);
+        shown.forEach(function (h) {
+          res.markers.push({ i: h.i, kind: h.bull ? 'buy' : 'sell', price: 0.5,
+            text: h.bull ? 'CONFLUENCE BUY' : 'CONFLUENCE SELL', label: true });
+        });
+        res.notes.push('confluence: ' + hits.length + ' hit(s)' + (p.keepHistory ? '' : ' — showing last only (Pine label.delete)'));
+      } else if (p.showConfluence) {
+        res.notes.push('confluence needs DeMarker 1 and 2 both active');
+      }
+      if (!slots) res.notes.push('no DeMarker slot is active');
       return res;
     }
   },
@@ -776,15 +1165,35 @@ function drawBase() {
     ctx.fillRect(x0, Math.min(yo, yc), bw, Math.max(1.5, Math.abs(yc - yo)));
   }
 
-  /* markers */
+  /* markers — drawn in the pane the indicator lives in, not always price */
   state.computed.forEach(function (c) {
+    var toY = null;
+    if (c.pane === 'price') toY = ps.toY;
+    else if (c.pane === 'osc' && os) toY = os.toY;
+    else if (c.pane === 'vol' && geo.volH) toY = vs.toY;
+    if (!toY) return;
     (c.r.markers || []).forEach(function (m) {
       if (m.i < v.start || m.i >= v.end) return;
       var k = m.i - v.start;
       var x = barX(geo, v, k) + bw / 2;
       var buy = m.kind === 'buy';
-      var y = buy ? ps.toY(m.price) + 14 : ps.toY(m.price) - 14;
-      ctx.fillStyle = buy ? '#089981' : '#f23645';
+      var col = buy ? '#089981' : '#f23645';
+
+      if (m.label) {
+        /* Pine label.new — a boxed caption pinned to a value, not an arrow */
+        var txt = m.text || '';
+        ctx.font = 'bold 9px sans-serif';
+        var lw = ctx.measureText(txt).width + 10;
+        var ly = toY(m.price);
+        var bx = Math.max(2, Math.min(x - lw / 2, geo.plotW - lw - 2));
+        ctx.fillStyle = col;
+        ctx.fillRect(bx, ly - 8, lw, 16);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(txt, bx + lw / 2, ly);
+        return;
+      }
+      var y = buy ? toY(m.price) + 14 : toY(m.price) - 14;
+      ctx.fillStyle = col;
       ctx.beginPath();
       if (buy) { ctx.moveTo(x, y - 8); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); }
       else { ctx.moveTo(x, y + 8); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); }
@@ -815,6 +1224,22 @@ function drawBase() {
           }
         } else drawLine(ctx, s, geo, v, os.toY);
       });
+      (c.r.lines || []).forEach(function (L) {
+        /* a divergence joins two bars — draw it when either end is on screen,
+           clamping the off-screen end to the viewport edge */
+        if (L.i2 < v.start || L.i1 >= v.end) return;
+        var k1 = Math.max(0, Math.min(v.n - 1, L.i1 - v.start));
+        var k2 = Math.max(0, Math.min(v.n - 1, L.i2 - v.start));
+        if (k2 <= k1) return;
+        ctx.strokeStyle = L.color || '#ffeb3b';
+        ctx.lineWidth = L.width || 1;
+        if (L.dotted) ctx.setLineDash([2, 2]); else ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(barX(geo, v, k1) + bw / 2, os.toY(L.y1));
+        ctx.lineTo(barX(geo, v, k2) + bw / 2, os.toY(L.y2));
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
     });
     /* osc axis labels */
     ctx.fillStyle = '#787b86'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -840,6 +1265,7 @@ function drawBase() {
 function drawLine(ctx, s, geo, v, toY) {
   ctx.strokeStyle = s.color || '#2962ff';
   ctx.lineWidth = s.width || 1.5;
+  if (s.alpha) ctx.globalAlpha = Math.max(0.05, 1 - s.alpha / 100);
   if (s.dash) ctx.setLineDash(s.dash); else ctx.setLineDash([]);
   ctx.beginPath();
   var started = false, k, val;
@@ -851,6 +1277,7 @@ function drawLine(ctx, s, geo, v, toY) {
   }
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
 }
 
 function fillBetween(ctx, a, b, col, geo, v, toY) {
@@ -1218,6 +1645,8 @@ async function loadData(force) {
 function applyData(candles, mode, provider, wantSym, wantTf, note) {
   if (!candles || !candles.length) candles = synth(wantSym, wantTf), mode = 'sim';
   state.candles = candles;
+  /* MTF bars belong to a symbol, so a symbol switch invalidates them */
+  if (state.symbolLoadedFor !== wantSym) { resetMtf(); state.symbolLoadedFor = wantSym; }
   state.source = mode;
   state.provider = provider;
   state.note = note || '';
@@ -1227,6 +1656,8 @@ function applyData(candles, mode, provider, wantSym, wantTf, note) {
   loadCtl = null;
   updateHud();
   redrawAll();
+  /* kick off any extra timeframe series the active indicators declared */
+  ensureMtf();
 }
 
 /* live tick: only advance the forming bar when data is synthetic;
@@ -1305,8 +1736,11 @@ function renderChips() {
   state.active.forEach(function (a) {
     var d = DEFS[a.def];
     var w = document.createElement('span');
-    w.className = 'chip ' + (errs[a.uid] ? 'chip-sim' : 'chip-on');
+    var cc = (state.computed || []).filter(function (x) { return x.uid === a.uid; })[0];
+    var notes = cc && cc.r && cc.r.notes && cc.r.notes.length ? cc.r.notes.join(' · ') : '';
+    w.className = 'chip ' + (errs[a.uid] ? 'chip-sim' : (notes && /no data|unavailable|needs|< 30|no reachable/.test(notes) ? 'chip-cache' : 'chip-on'));
     if (errs[a.uid]) w.title = 'compute error: ' + errs[a.uid];
+    else if (notes) w.title = notes;
     var nm = document.createElement('button');
     nm.className = 'chip-name';
     nm.textContent = (errs[a.uid] ? '⚠ ' : '') + (a.title || d.name);
@@ -1496,6 +1930,13 @@ function loadPrefs() {
       (d.params || []).forEach(function (x) { params[x.k] = (a.params && a.params[x.k] != null) ? a.params[x.k] : x.d; });
       state.active.push({ uid: state.uid++, def: a.def, params: params, title: a.title || d.name });
     });
+    /* a newly shipped indicator must reach browsers that already hold prefs,
+       otherwise it looks like the feature was never added */
+    if (DEFS.dmpro && !state.active.some(function (a) { return a.def === 'dmpro'; })) {
+      var dp = {};
+      DEFS.dmpro.params.forEach(function (x) { dp[x.k] = x.d; });
+      state.active.push({ uid: state.uid++, def: 'dmpro', params: dp, title: DEFS.dmpro.name });
+    }
     return true;
   }
   return false;
@@ -1683,7 +2124,7 @@ function boot() {
   if (!hadPrefs || !state.active.length) {
     addIndicator('volume');
     addIndicator('b2');
-    addIndicator('demarker');
+    addIndicator('dmpro');
   }
   renderChips();
 
@@ -1703,7 +2144,11 @@ window.__diag = function () {
     candles: state.candles.length,
     active: state.active.map(function (a) { return a.def; }),
     geo: state.geo,
-    errors: (state.computed || []).filter(function (c) { return c.error; }).map(function (c) { return c.def + ': ' + c.error; })
+    errors: (state.computed || []).filter(function (c) { return c.error; }).map(function (c) { return c.def + ': ' + c.error; }),
+    notes: (state.computed || []).filter(function (c) { return c.r && c.r.notes && c.r.notes.length; }).map(function (c) { return c.def + ': ' + c.r.notes.join(' | '); }),
+    mtf: Object.keys(mtfStore).map(function (k) { return k + 's=' + (mtfStore[k].cs ? mtfStore[k].cs.length : 0) + 'bars'; }),
+    mtfPending: Object.keys(mtfPending),
+    mtfError: Object.keys(mtfError).map(function (k) { return k + 's: ' + mtfError[k]; })
   };
   var cv = els.base;
   if (!cv || !cv.width || !cv.height) { out.painted = false; out.why = 'canvas has no size'; return out; }
