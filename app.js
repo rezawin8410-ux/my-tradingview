@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.8.0';
+var VERSION = '3.8.1';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -2978,6 +2978,10 @@ function edMsg(m, ok) {
 function updateHud() {
   var cs = state.candles;
   if (!els.hSym) return;                 /* headless / pre-boot: nothing to write */
+  /* the nav bar and the version title describe navigation, not the status strip,
+     so they must refresh even when the HUD is hidden */
+  updateNavBar();
+  document.title = 'TradingView · v' + VERSION;
   if (!state.chrome.hud) { heartbeat(); return; }   /* hidden: keep the dot logic, skip the text */
   var Sy = SYMBOLS[state.symbol];
   var name = (Sy ? Sy.label : state.symbol) + ' · ' + state.tf + (Sy && Sy.noVolume ? ' · no volume' : '');
@@ -3034,9 +3038,6 @@ function updateHud() {
   /* poll counter + age of the last ACTUAL change separates "polling, market flat"
      from "dead" — the very thing that looked broken */
   var ageSec = lastChangeAt ? Math.round((Date.now() - lastChangeAt) / 1000) : null;
-  updateNavBar();
-  /* the title carries the version, so a stale cached build is obvious at a glance */
-  document.title = 'TradingView · v' + VERSION;
   els.hRange.textContent = 'bars ' + cs.length + ' · shown ' + Math.min(state.visible, cs.length) +
     ' · poll #' + pollCount + (ageSec == null ? '' : ' · changed ' + ageSec + 's ago') +
     ' · every ' + (POLL_MS / 1000) + 's';
@@ -3432,7 +3433,7 @@ function updateNavBar() {
     els.zoomSlider.max = String(Math.max(MIN_BARS, Math.min(MAX_BARS, len || MAX_BARS)));
     els.zoomSlider.value = String(Math.min(state.visible, Number(els.zoomSlider.max)));
   }
-  if (els.zoomLbl) els.zoomLbl.textContent = Math.min(state.visible, len || state.visible) + ' bars';
+  if (els.zoomLbl) els.zoomLbl.textContent = (len ? Math.min(state.visible, len) : 0) + ' bars';
   if (els.posLbl) {
     els.posLbl.textContent = state.offset === 0 ? 'newest' : '\u2212' + state.offset + ' bars back';
     els.posLbl.className = state.offset === 0 ? 'nav-ok' : 'nav-back';
