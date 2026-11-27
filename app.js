@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.9.1';
+var VERSION = '3.9.2';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -2466,12 +2466,24 @@ function reportDrawError(e) {
   if (window.console && console.error) console.error(m, e);
 }
 
+var PAINT_WATCH_MS = 400;      /* a paint pending longer than this is abandoned */
+var pendBaseAt = 0, pendOvAt = 0;
+
+/* True when a pending paint has overstayed: a suspended timer must not be able
+   to disable drawing for good. */
+function paintStalled(pendAt) {
+  return !!(pendAt && (Date.now() - pendAt) > PAINT_WATCH_MS);
+}
+
 function scheduleBase() {
-  if (pendBase || !els.stack) return;
+  if (!els.stack) return;
+  if (pendBase && !paintStalled(pendBaseAt)) return;
   pendBase = 1;
+  pendBaseAt = Date.now();
   var run = function () {
     if (!pendBase) return;
     pendBase = 0;
+    pendBaseAt = 0;
     try { drawBase(); drawOverlay(); } catch (e) { reportDrawError(e); }
   };
   setTimeout(run, 0);
@@ -2479,11 +2491,14 @@ function scheduleBase() {
 }
 
 function scheduleOverlay() {
-  if (pendOv || !els.overlay) return;
+  if (!els.overlay) return;
+  if (pendOv && !paintStalled(pendOvAt)) return;
   pendOv = 1;
+  pendOvAt = Date.now();
   var run = function () {
     if (!pendOv) return;
     pendOv = 0;
+    pendOvAt = 0;
     try { drawOverlay(); } catch (e) { reportDrawError(e); }
   };
   setTimeout(run, 0);
@@ -2492,6 +2507,16 @@ function scheduleOverlay() {
 function redrawAll() { recompute(); scheduleBase(); }
 
 /* ---------------- Canvas sizing ---------------- */
+/* Paint now, ignoring any pending deferred callback. Used where the bitmap has
+   just been cleared: a deferred schedule may never fire if the page is
+   backgrounded, and a cleared canvas must not stay blank. */
+function paintNow() {
+  pendBase = 0; pendBaseAt = 0;
+  pendOv = 0; pendOvAt = 0;
+  try { drawBase(); drawOverlay(); }
+  catch (e) { reportDrawError(e); }
+}
+
 function sizeCanvases() {
   dpr = Math.min(2.5, window.devicePixelRatio || 1);
   var st = els.stack;
@@ -2507,7 +2532,9 @@ function sizeCanvases() {
   baseCtx = els.base.getContext('2d');
   ovCtx = els.overlay.getContext('2d');
   state.geo = computeGeo();
-  scheduleBase();
+  /* resizing cleared both bitmaps — paint immediately rather than trusting a
+     deferred callback that a backgrounded page may never deliver */
+  paintNow();
 }
 
 /* ---------------- Data layer ---------------- */
@@ -3731,6 +3758,15 @@ function bindEvents() {
     if (e.key === '0') { e.preventDefault(); resetView(); return; }
     if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomTimeKeys(0.85); return; }
     if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomTimeKeys(1.18); }
+  });
+
+  /* Android suspends timers while the page is hidden; on return the chart must
+     repaint itself instead of waiting for a gesture that may never come */
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    paintNow();
+    /* the feed may have moved while we were suspended */
+    if (state.candles.length && !state.busy) pollLatest();
   });
 
   window.addEventListener('resize', sizeCanvases);
