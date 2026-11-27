@@ -373,17 +373,21 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
     function resizeCanvases() {
       const dpr = window.devicePixelRatio || 1;
       
-      const wMain = document.getElementById('mainChartBox').clientWidth;
-      const hMain = document.getElementById('mainChartBox').clientHeight;
-      candleCanvas.width = wMain * dpr;
-      candleCanvas.height = hMain * dpr;
+      const wMain = document.getElementById('mainChartBox').clientWidth || window.innerWidth;
+      const hMain = document.getElementById('mainChartBox').clientHeight || (window.innerHeight - 160);
+      candleCanvas.width = Math.round(wMain * dpr);
+      candleCanvas.height = Math.round(hMain * dpr);
+      candleCanvas.style.width = wMain + 'px';
+      candleCanvas.style.height = hMain + 'px';
       ctxCandle.setTransform(1, 0, 0, 1, 0, 0);
       ctxCandle.scale(dpr, dpr);
 
-      const wOsc = document.getElementById('oscillatorBox').clientWidth;
-      const hOsc = document.getElementById('oscillatorBox').clientHeight;
-      oscCanvas.width = wOsc * dpr;
-      oscCanvas.height = hOsc * dpr;
+      const wOsc = document.getElementById('oscillatorBox').clientWidth || window.innerWidth;
+      const hOsc = document.getElementById('oscillatorBox').clientHeight || 112;
+      oscCanvas.width = Math.round(wOsc * dpr);
+      oscCanvas.height = Math.round(hOsc * dpr);
+      oscCanvas.style.width = wOsc + 'px';
+      oscCanvas.style.height = hOsc + 'px';
       ctxOsc.setTransform(1, 0, 0, 1, 0, 0);
       ctxOsc.scale(dpr, dpr);
 
@@ -666,7 +670,6 @@ nearPct = input.float(0.25, "gate: distance to edge (%)")
         }
         render();
       }
-    }, { passive: true });
     }, { passive: true });
 
     box.addEventListener('touchend', () => { isDragging = false; initialPinchDist = 0; });
