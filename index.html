@@ -22,7 +22,17 @@ header{flex:0 0 auto;background:#1e222d;border-bottom:1px solid #2a2e39;
 .hright{display:flex;align-items:center;gap:5px;flex:0 0 auto}
 select.sym{background:#2a2e39;color:#fff;border:1px solid #363a45;border-radius:4px;
   padding:5px 7px;font-size:12px;font-weight:600;cursor:pointer;outline:none;max-width:170px}
-.dot{width:7px;height:7px;border-radius:50%;background:#089981;display:inline-block;animation:pulse 2s infinite}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto;background:#363a45}
+/* heartbeat: driven by real data age, never by a bare CSS loop */
+.dot.live{background:#089981;animation:pulse 1.6s infinite}
+.dot.warn{background:#ff9800;animation:pulse 1.6s infinite}
+.dot.bad{background:#f23645}
+.dot.sim{background:#787b86}
+.dot.idle{background:#363a45}
+.btn.ind{background:#1e3a5f;border-color:#2c5a8f;color:#cfe3ff}
+.btn.ind:hover{background:#254b7a}
+.live-count{color:#089981;font-weight:600}
+.stale-count{color:#787b86}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 .tfs{display:flex;gap:3px}
 .tf-btn{background:#2a2e39;color:#cfd3dc;border:1px solid #363a45;padding:5px 8px;border-radius:4px;
@@ -144,7 +154,7 @@ textarea.expr:focus{border-color:#2962ff}
 
 <header>
   <div class="hleft">
-    <span class="dot" title="live data feed"></span>
+    <span class="dot idle" id="liveDot" title="checking feed…"></span>
     <select id="symSel" class="sym" title="instrument"></select>
     <div class="tfs" id="tfGroup">
       <button class="tf-btn" data-tf="1m">1m</button>
@@ -159,7 +169,7 @@ textarea.expr:focus{border-color:#2962ff}
   </div>
   <div class="hright">
     <button class="btn icon" id="resetBtn" title="reset zoom &amp; pan (or double-click chart)">⟲</button>
-    <button class="btn" id="catBtn" title="add indicators">＋ <span class="txt">Indicators</span></button>
+    <button class="btn ind" id="catBtn" title="browse and add indicators">▤ <span class="txt">Indicators (0)</span></button>
     <button class="btn primary" id="edBtn" title="formula / Pine reference">&lt;/&gt; <span class="txt">Formula</span></button>
   </div>
 </header>
@@ -173,6 +183,7 @@ textarea.expr:focus{border-color:#2962ff}
   <span class="sep">|</span>
   <span class="chip chip-sim" id="hSrc">—</span>
   <span class="lbl">updated <span id="hTime">—</span></span>
+  <span class="lbl" id="hNext">—</span>
   <span id="hRange"></span>
   <span id="verTag"></span>
 </div>
@@ -221,6 +232,6 @@ textarea.expr:focus{border-color:#2962ff}
   </div>
 </div>
 
-<script src="app.js?v=3.3.0"></script>
+<script src="app.js?v=3.4.0"></script>
 </body>
 </html>
