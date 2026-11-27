@@ -93,6 +93,26 @@ html[data-ui="off"] .hright{display:none}
 
 /* ---- chart stack ---- */
 #stack{flex:1 1 auto;position:relative;min-height:0;width:100%;cursor:crosshair;touch-action:none;overflow:hidden}
+/* a 58px axis strip plus a mouse wheel is undiscoverable on a phone, so candle
+   width and time stepping get real on-screen controls */
+#navBar{flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:4px 8px;
+  background:#181b24;border-bottom:1px solid #2a2e39;overflow-x:auto;scrollbar-width:none}
+#navBar::-webkit-scrollbar{display:none}
+#navBar.hidden{display:none}
+.nb{background:#2a2e39;border:1px solid #363a45;color:#dfe4ee;border-radius:4px;
+  min-width:30px;min-height:28px;padding:3px 7px;font-size:13px;cursor:pointer;flex:0 0 auto;line-height:1}
+.nb:hover:not(:disabled){background:#363a45}
+.nb:disabled{opacity:.3;cursor:default}
+#zoomSlider{flex:0 0 110px;width:110px;accent-color:#2962ff;cursor:ew-resize}
+.nb-lbl{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;white-space:nowrap;flex:0 0 auto}
+.nav-ok{color:#787b86}
+.nav-back{color:#e8c14a;font-weight:600}
+.nb-sep{width:1px;height:16px;background:#2a2e39;flex:0 0 auto}
+#hintBar{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:4px 8px;background:#12233a;border-bottom:1px solid #1e3a5f;color:#9fc2ef;font-size:10.5px}
+#hintBar button{background:none;border:none;color:#7aa2ff;font-size:14px;cursor:pointer;flex:0 0 auto;line-height:1}
+#hintBar.hidden{display:none}
+@media (max-width:520px){#zoomSlider{flex:0 0 84px;width:84px}#hintBar{font-size:9.5px}}
 #baseCanvas,#ovCanvas{position:absolute;left:0;top:0;display:block}
 #ovCanvas{pointer-events:none;z-index:5}
 
@@ -210,6 +230,25 @@ textarea.expr:focus{border-color:#2962ff}
 
 <div id="chipsBar"><span id="chips" style="display:contents"></span></div>
 
+<div id="navBar">
+  <button type="button" class="nb" id="zoomOutBtn" title="wider candles (fewer bars)">－</button>
+  <input type="range" id="zoomSlider" min="10" max="400" step="1" value="70" title="candle width — fewer bars = wider candles">
+  <button type="button" class="nb" id="zoomInBtn" title="thinner candles (more bars)">＋</button>
+  <span class="nb-lbl" id="zoomLbl">70 bars</span>
+  <span class="nb-sep"></span>
+  <button type="button" class="nb" id="panLBtn" title="step back in time">◀</button>
+  <button type="button" class="nb" id="panRBtn" title="step toward the newest bars">▶</button>
+  <span class="nb-lbl nav-ok" id="posLbl">newest</span>
+  <span class="nb-sep"></span>
+  <button type="button" class="nb" id="fitBtn" title="fit all loaded bars on screen">⇔ fit</button>
+  <span class="nb-lbl nav-ok" id="axisLbl">price: auto</span>
+</div>
+
+<div id="hintBar">
+  <span>drag chart = move time · drag right axis = move price · scroll / pinch / slider = stretch candles · dblclick or ⟲ = reset</span>
+  <button type="button" id="hintClose" title="hide this hint">×</button>
+</div>
+
 <div id="hud">
   <span id="hSym">—</span>
   <span id="hPrice">—</span>
@@ -287,6 +326,6 @@ textarea.expr:focus{border-color:#2962ff}
   </div>
 </div>
 
-<script src="app.js?v=3.7.0"></script>
+<script src="app.js?v=3.8.0"></script>
 </body>
 </html>
