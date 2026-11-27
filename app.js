@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.5.1';
+var VERSION = '3.5.2';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -74,7 +74,15 @@ function chooseSymbol(id) {
   if (!SYMBOLS[id]) return;
   var changed = id !== state.symbol;
   state.symbol = id;
-  if (changed) state.offset = 0;
+  if (changed) {
+    state.offset = 0;
+    /* drop the previous symbol's bars immediately: they must not sit on screen
+       under the new label while the new load is in flight */
+    state.candles = [];
+    state.dataSym = null; state.dataTf = null;
+    state.source = 'loading';
+    state.busy = true;
+  }
   /* a symbol that only publishes daily bars must not be left sitting on 1m */
   var allow = supportedTfs(SYMBOLS[id]);
   if (allow.indexOf(state.tf) < 0) {
@@ -1608,6 +1616,8 @@ var state = {
   symbol: 'pax-gold',
   tf: '5m',
   candles: [],
+  dataSym: null,
+  dataTf: null,
   source: 'idle',
   provider: null,
   note: '',
@@ -1790,7 +1800,26 @@ function fmtFull(sec) {
 /* ---------------- Base drawing ---------------- */
 function drawBase() {
   var cs = state.candles;
-  if (!cs.length || !state.computed) return;
+  if (!cs.length || !state.computed) {
+    /* without this the canvas keeps the PREVIOUS symbol's last frame, which is
+       how bitcoin candles ended up under a gold label */
+    if (!state.geo) return;
+    var g0 = state.geo, cx0 = baseCtx;
+    if (!cx0 || !g0.W) return;
+    cx0.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx0.clearRect(0, 0, g0.W, g0.H);
+    cx0.fillStyle = '#131722';
+    cx0.fillRect(0, 0, g0.W, g0.H);
+    cx0.fillStyle = '#787b86';
+    cx0.font = '13px sans-serif';
+    cx0.textAlign = 'center';
+    cx0.textBaseline = 'middle';
+    cx0.fillText(state.busy ? 'loading ' + ((SYMBOLS[state.symbol] || {}).label || state.symbol) + ' · ' + state.tf + ' …'
+                            : 'no data for ' + ((SYMBOLS[state.symbol] || {}).label || state.symbol) + ' · ' + state.tf,
+                 g0.W / 2, g0.H / 2);
+    if (ovCtx) { ovCtx.setTransform(dpr, 0, 0, dpr, 0, 0); ovCtx.clearRect(0, 0, g0.W, g0.H); }
+    return;
+  }
   if (!state.geo) state.geo = computeGeo();
   var geo = state.geo;
   if (!geo || geo.W <= 0 || geo.H <= 0) return;
@@ -2604,6 +2633,10 @@ async function loadData(force) {
 function applyData(candles, mode, provider, wantSym, wantTf, note) {
   if (!candles || !candles.length) candles = synth(wantSym, wantTf), mode = 'sim';
   state.candles = candles;
+  /* the bars belong to a symbol and a frame; remember which, so no label can
+     ever be rendered from a different selection than the one on screen */
+  state.dataSym = wantSym;
+  state.dataTf = wantTf;
   /* MTF bars belong to a symbol, so a symbol switch invalidates them */
   if (state.symbolLoadedFor !== wantSym) { resetMtf(); state.symbolLoadedFor = wantSym; }
   state.source = mode;
@@ -2723,7 +2756,8 @@ function heartbeat() {
   var barSec = barSeconds(state.candles) || 60;
   var age = lastChangeAt ? (Date.now() - lastChangeAt) / 1000 : Infinity;
   var cls, title;
-  if (state.source === 'sim') { cls = 'dot sim'; title = 'SIMULATED — no data source reachable'; }
+  if (!dataMatches()) { cls = 'dot idle'; title = state.busy ? 'loading the selected instrument — nothing live yet' : 'no bars for the selected instrument'; }
+  else if (state.source === 'sim') { cls = 'dot sim'; title = 'SIMULATED — no data source reachable'; }
   else if (pollFails >= 3) { cls = 'dot bad'; title = 'feed failing: ' + (state.pollErr || 'unknown') + ' (' + pollFails + ' in a row)'; }
   else if (age > barSec + 30) { cls = 'dot warn'; title = 'data is ' + Math.round(age) + 's old (bar = ' + barSec + 's) — feed stalled'; }
   else { cls = 'dot live'; title = 'LIVE — last change ' + Math.round(age) + 's ago, polling every ' + (POLL_MS / 1000) + 's'; }
@@ -2735,6 +2769,13 @@ function heartbeat() {
 }
 
 /* ---------------- HUD / chrome ---------------- */
+/* True only when the bars on screen belong to the symbol+frame the chrome is
+   about to advertise. During a switch (or a load that has not landed) this is
+   false and every price label must go quiet instead of lying. */
+function dataMatches() {
+  return !!(state.candles.length && state.dataSym === state.symbol && state.dataTf === state.tf);
+}
+
 function setMsg(m) { state.msg = m; }
 
 function edMsg(m, ok) {
@@ -2746,13 +2787,33 @@ function edMsg(m, ok) {
 
 function updateHud() {
   var cs = state.candles;
-  if (!cs.length) return;
   if (!els.hSym) return;                 /* headless / pre-boot: nothing to write */
+  var Sy = SYMBOLS[state.symbol];
+  var name = (Sy ? Sy.label : state.symbol) + ' · ' + state.tf + (Sy && Sy.noVolume ? ' · no volume' : '');
+
+  if (!dataMatches()) {
+    /* chrome describes the pending selection, price fields must NOT show bars
+       that belong to something else */
+    els.hSym.textContent = name;
+    els.hPrice.textContent = '—';
+    els.hPrice.className = 'stale-count';
+    els.hChg.textContent = '';
+    els.hSrc.textContent = state.busy ? 'LOADING' : 'NO DATA';
+    els.hSrc.className = 'chip chip-sim';
+    els.hSrc.title = state.busy
+      ? 'fetching ' + name + ' — the bars still on screen are from the previous symbol and are not drawn'
+      : 'no bars for ' + name;
+    els.hTime.textContent = '—';
+    els.hRange.textContent = state.busy ? 'waiting for bars…' : 'no bars';
+    if (els.hNext) { els.hNext.textContent = state.busy ? 'loading ' + name + '…' : 'no data'; els.hNext.className = 'stale-count'; }
+    els.verTag.textContent = 'v' + VERSION;
+    heartbeat();
+    return;
+  }
+
   var last = cs[cs.length - 1], prev = cs[cs.length - 2] || last;
   var chg = last.close - prev.close, pct = prev.close ? chg / prev.close * 100 : 0;
-  var Sy = SYMBOLS[state.symbol];
-  els.hSym.textContent = (Sy ? Sy.label : state.symbol) + ' · ' + state.tf +
-    (Sy && Sy.noVolume ? ' · no volume' : '');
+  els.hSym.textContent = name;
   els.hPrice.textContent = fmt(last.close);
   els.hPrice.className = chg >= 0 ? 'text-emerald-400' : 'text-rose-400';
   els.hChg.textContent = (chg >= 0 ? '+' : '') + fmt(chg) + ' (' + pct.toFixed(2) + '%)';
@@ -2760,6 +2821,7 @@ function updateHud() {
 
   var badge = els.hSrc;
   var pl = (PROVIDERS[state.provider] && PROVIDERS[state.provider].label) || state.provider || '—';
+  if (state.dataSym !== state.symbol) pl = 'mismatched';
   if (state.source === 'live') {
     badge.textContent = 'LIVE · ' + pl + (PROVIDERS[state.provider] && !PROVIDERS[state.provider].realCandles ? ' (ticks)' : '');
     badge.className = 'chip chip-live';
@@ -3115,8 +3177,15 @@ function bindEvents() {
       document.querySelectorAll('#tfGroup .tf-btn').forEach(function (x) { x.classList.remove('active-tf'); });
       if (b.disabled) return;
       b.classList.add('active-tf');
-      state.tf = b.getAttribute('data-tf');
-      state.offset = 0; state.visible = 70;
+      var newTf = b.getAttribute('data-tf');
+      if (newTf !== state.tf) {
+        state.tf = newTf;
+        state.offset = 0; state.visible = 70;
+        state.candles = [];
+        state.dataSym = null; state.dataTf = null;
+        state.source = 'loading'; state.busy = true;
+        updateHud(); scheduleBase();
+      }
       savePrefs(); loadData(true);
     });
   });
