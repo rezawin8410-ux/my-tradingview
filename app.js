@@ -4,7 +4,7 @@
    separate base/overlay canvases (crosshair never recomputes TA)
    ============================================================= */
 
-var VERSION = '3.9.0';
+var VERSION = '3.9.1';
 var AXIS_W = 58;
 var AXIS_H = 20;
 var VOL_H = 68;
@@ -1920,6 +1920,31 @@ function oscBands(geo, comps, v) {
   return list;
 }
 
+/* Label placement for one oscillator band, as a pure function.
+   in:  band {top,h,lo,hi}, the y of the last label already drawn, the pane floor
+   out: { items:[{y,text}], lastY }  — items may be empty when nothing fits.
+   Rules: hi label at top+8, lo label at top+h-8, both pushed 14px clear of the
+   previous label and pulled 9px above the time axis; if the two cannot both fit
+   they collapse into ONE centred "hi / lo" label; if even that does not fit, the
+   band draws no label rather than overlapping its neighbours. */
+var LABEL_GAP = 14, AXIS_CLEAR = 9;
+
+function bandLabelPlan(b, lastY, axisTop, fmt) {
+  var f = fmt || function (v) { return String(Math.round(v * 100) / 100); };
+  var hiY = b.top + 8;
+  var loY = b.top + b.h - 8;
+  if (hiY < lastY + LABEL_GAP) hiY = lastY + LABEL_GAP;
+  if (loY > axisTop - AXIS_CLEAR) loY = axisTop - AXIS_CLEAR;
+  if (loY >= hiY + LABEL_GAP) {
+    return { items: [{ y: hiY, text: f(b.hi) }, { y: loY, text: f(b.lo) }], lastY: loY };
+  }
+  var midY = b.top + b.h / 2;
+  if (midY >= lastY + LABEL_GAP && midY <= axisTop - AXIS_CLEAR) {
+    return { items: [{ y: midY, text: f(b.hi) + ' / ' + f(b.lo) }], lastY: midY };
+  }
+  return { items: [], lastY: lastY };
+}
+
 function bandOfUid(bands, uid) {
   for (var i = 0; i < bands.length; i++)
     if (bands[i].inds.indexOf(uid) >= 0) return bands[i];
@@ -2196,15 +2221,18 @@ function drawBase() {
         ctx.setLineDash([]);
       });
     });
-    /* osc axis labels — per band, so each group reads against its own axis */
+    /* osc axis labels — per band, each group reads against its own axis,
+       positioned by the pure planner so nothing can overlap */
     ctx.fillStyle = '#787b86'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    var lastLabelY = -Infinity;
     bands.forEach(function (b) {
-      ctx.fillText(fmtAxis(b.hi), geo.plotW + 5, b.top + 8);
-      ctx.fillText(fmtAxis(b.lo), geo.plotW + 5, b.top + b.h - 8);
       if (b.top > geo.oscTop) {
         ctx.strokeStyle = '#2a2e39'; ctx.lineWidth = 1; ctx.setLineDash([]);
         ctx.beginPath(); ctx.moveTo(0, b.top); ctx.lineTo(geo.plotW, b.top); ctx.stroke();
       }
+      var plan = bandLabelPlan(b, lastLabelY, geo.axisTop, fmtAxis);
+      plan.items.forEach(function (it) { ctx.fillText(it.text, geo.plotW + 5, it.y); });
+      lastLabelY = plan.lastY;
     });
     ctx.fillText(fmtAxis(os.lo), geo.plotW + 5, geo.oscTop + geo.oscH - 8);
   }
@@ -3900,6 +3928,10 @@ function boot() {
     addIndicator('b2');
     addIndicator('dmpro');
   }
+  /* the persisted chrome must be APPLIED at boot: loadPrefs can restore
+     hud=false, and applyChrome only ran on a click — which left the strip in
+     the DOM forever showing its placeholder dashes */
+  applyChrome(false);
   renderChips();
 
   bindEvents();
